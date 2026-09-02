@@ -21,13 +21,14 @@ const IDX_DEFS = [
 ];
 const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985';
 
-// 11个A股排名指数
+// 12个A股排名指数(含中证2000)
 const RANK_DEFS = [
   { code: 'sh000001', name: '上证指数', bare: '000001' },
   { code: 'sh000016', name: '上证50',   bare: '000016' },
   { code: 'sh000300', name: '沪深300', bare: '000300' },
   { code: 'sh000905', name: '中证500', bare: '000905' },
   { code: 'sh000852', name: '中证1000',bare: '000852' },
+  { code: 'sh932000', name: '中证2000',bare: '932000' },
   { code: 'sh000985', name: '中证全指', bare: '000985' },
   { code: 'sh000688', name: '科创50',   bare: '000688' },
   { code: 'sh931643', name: '双创50',   bare: '931643' },
@@ -35,15 +36,80 @@ const RANK_DEFS = [
   { code: 'sz399006', name: '创业板指', bare: '399006' },
   { code: 'sz399102', name: '创业板综', bare: '399102' }
 ];
-const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000905,1.000852,1.000985,1.000688,2.931643,0.399001,0.399006,0.399102';
+const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000905,1.000852,1.932000,1.000985,1.000688,2.931643,0.399001,0.399006,0.399102';
 
 // ---------- 东方财富直连 ----------
+// 多域名容灾: 主域名失败自动切换备用,提高不同浏览器/网络下的成功率
+const EM_HOSTS = [
+  'https://push2.eastmoney.com/api/qt/ulist.np/get',
+  'https://push2his.eastmoney.com/api/qt/ulist.np/get',
+  'https://82.push2.eastmoney.com/api/qt/ulist.np/get'
+];
+let _emHostIdx = 0; // 当前使用的主机索引,失败自动切换
+
+// 兼容性超时: 用传统 AbortController + setTimeout,避免旧浏览器不支持 AbortSignal.timeout
+function fetchWithTimeout(url, ms) {
+  if (typeof AbortController === 'undefined') {
+    // 极旧浏览器,直接 fetch 不带超时
+    return fetch(url).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
+  }
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal })
+    .then(r => { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch(e => { clearTimeout(t); throw e; });
+}
+
 async function fetchEM(secids, fields) {
-  const url = `${EM_BASE}?fields=${fields}&secids=${secids}&fltt=2`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
-  if (!r.ok) throw new Error('EM HTTP ' + r.status);
-  const j = await r.json();
-  return j?.data?.diff || [];
+  let lastErr = null;
+  // 阶段1: fetch + 多域名容灾
+  for (let i = 0; i < EM_HOSTS.length; i++) {
+    const hostIdx = (_emHostIdx + i) % EM_HOSTS.length;
+    const url = `${EM_HOSTS[hostIdx]}?fields=${fields}&secids=${secids}&fltt=2`;
+    try {
+      const j = await fetchWithTimeout(url, 8000);
+      if (j && j.data && j.data.diff) {
+        _emHostIdx = hostIdx; // 命中后固定使用该域名,减少切换
+        return j.data.diff;
+      }
+      lastErr = new Error('返回数据为空');
+    } catch (e) {
+      lastErr = e;
+      // 继续尝试下一个域名
+    }
+  }
+  // 阶段2: XHR 最终兜底(适配禁用fetch/旧浏览器/被扩展拦截但XHR可通的环境)
+  for (let i = 0; i < EM_HOSTS.length; i++) {
+    const url = `${EM_HOSTS[i]}?fields=${fields}&secids=${secids}&fltt=2`;
+    try {
+      const j = await fetchXHR(url);
+      if (j && j.data && j.data.diff) {
+        _emHostIdx = i;
+        return j.data.diff;
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('所有数据源均失败(请检查浏览器扩展是否拦截了eastmoney.com)');
+}
+
+// XHR fallback: 极旧或受限浏览器(如禁用fetch时)的最终兜底
+function fetchXHR(url) {
+  return new Promise((resolve, reject) => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 8000;
+      xhr.onload = () => {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch (e) { reject(e); }
+      };
+      xhr.onerror = () => reject(new Error('XHR 网络错误(可能被浏览器扩展拦截)'));
+      xhr.ontimeout = () => reject(new Error('XHR 超时'));
+      xhr.send();
+    } catch (e) { reject(e); }
+  });
 }
 
 // ---------- 行情快照 ----------
@@ -235,12 +301,25 @@ function applyGrayMode(on) {
 
 // ---------- 主循环 ----------
 let _loopTimer = null;
+let _failCount = 0;
 async function refresh() {
   try {
     const snap = await fetchSnapshot();
     renderSnapshot(snap);
+    _failCount = 0;
+    $('refreshBadge').textContent = '● 实时';
+    $('refreshBadge').classList.remove('badge-err');
   } catch (e) {
-    $('refreshBadge').textContent = '⚠ 获取失败';
+    _failCount++;
+    const badge = $('refreshBadge');
+    if (_failCount >= 2) {
+      // 连续2次失败时给出诊断提示
+      badge.textContent = '⚠ 获取失败';
+      badge.classList.add('badge-err');
+      badge.title = `${e.message}\n如长期失败,可能是:\n1. 浏览器扩展(广告拦截/隐私)屏蔽了 push2.eastmoney.com\n2. 当前网络限速\n3. 浏览器过旧不支持 fetch/AbortController\n请尝试禁用扩展或更换浏览器`;
+    } else {
+      badge.textContent = '● 重试中';
+    }
   } finally {
     _loopTimer = setTimeout(refresh, REFRESH_MS);
   }
