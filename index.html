@@ -56,7 +56,7 @@
       <details class="src-details">
         <summary>数据来源说明(点击展开)</summary>
         <div class="source-doc">
-          <p>本看板为纯前端静态版,直连 <strong>东方财富</strong> 行情接口 <code>push2.eastmoney.com</code>,无需后端服务。左侧展示 <strong>6 个指数</strong>(A股在前):上证指数、中证全指、创业板指、科创50、日经225、韩国KOSPI。右侧涨跌幅排名仅含 <strong>11 个A股宽基指数</strong>供调仓参考(已排除科创100)。另提供今日实时成交额(取自中证全指累计成交额)与昨日同时点对比,以及全A股涨跌家数进度条。</p>
+          <p>本看板为纯前端静态版,直连 <strong>东方财富</strong> 行情接口(主源 push2.eastmoney.com,失败自动切换 push2his / 82.push2,且用 XHR 兜底,适配各种浏览器)。左侧展示 <strong>6 个指数</strong>(A股在前):上证指数、中证全指、创业板指、科创50、日经225、韩国KOSPI。右侧涨跌幅排名仅含 <strong>12 个A股宽基指数</strong>(含中证2000,已排除科创100)供调仓参考。另提供今日实时成交额(取自中证全指累计成交额)与昨日同时点对比,以及全A股涨跌家数进度条。</p>
           <p class="note">说明:成交额对比依赖浏览器 localStorage 持久化每日5分钟粒度样本,首次访问无昨日数据,运行满1日后生效。刷新间隔3秒。点击右上角「🌙 灰白」切换上班模式(中性灰底,弱化涨跌色)。</p>
         </div>
       </details>
