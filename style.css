@@ -269,10 +269,6 @@ body.gray-mode #grayBtn { background: var(--panel-2); border-color: var(--txt-di
 }
 .sponsor-qr img {
   width: 100%; height: auto; display: block;
-  /* 只保留二维码主体区域, 裁掉底部名字 */
-  object-fit: cover;
-  clip-path: inset(0 0 18% 0);
-  margin-bottom: -22px;
 }
 .sponsor-tip {
   flex: 1; color: var(--txt-dim); font-size: 14px; line-height: 1.8;
