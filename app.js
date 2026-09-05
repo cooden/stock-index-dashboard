@@ -70,12 +70,12 @@ function fetchWithTimeout(url, ms) {
 
 async function fetchEM(secids, fields) {
   let lastErr = null;
-  // 每个域名超时5秒, 最多尝试2个域名, 避免总耗时过长导致刷新堆积
+  // GitHub Pages 海外节点访问国内接口延迟高, 超时设12秒, 尝试2个域名
   for (let i = 0; i < Math.min(2, EM_HOSTS.length); i++) {
     const hostIdx = (_emHostIdx + i) % EM_HOSTS.length;
     const url = `${EM_HOSTS[hostIdx]}?fields=${fields}&secids=${secids}&fltt=2`;
     try {
-      const j = await fetchWithTimeout(url, 5000);
+      const j = await fetchWithTimeout(url, 12000);
       if (j && j.data && j.data.diff) {
         _emHostIdx = hostIdx;
         return j.data.diff;
@@ -83,7 +83,7 @@ async function fetchEM(secids, fields) {
       lastErr = new Error('返回数据为空');
     } catch (e) { lastErr = e; }
   }
-  // XHR 兜底(5秒超时)
+  // XHR 兜底(12秒超时)
   try {
     const url = `${EM_HOSTS[_emHostIdx]}?fields=${fields}&secids=${secids}&fltt=2`;
     const j = await fetchXHR(url);
@@ -97,7 +97,7 @@ function fetchXHR(url) {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
-      xhr.timeout = 5000;
+      xhr.timeout = 12000;
       xhr.onload = () => { try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(e); } };
       xhr.onerror = () => reject(new Error('XHR 网络错误'));
       xhr.ontimeout = () => reject(new Error('XHR 超时'));
@@ -112,7 +112,7 @@ async function fetchTencent(codes) {
   const url = `https://qt.gtimg.cn/q=${codes.join(',')}`;
   let text;
   try {
-    const resp = await fetchWithTimeoutArray(url, 5000);
+    const resp = await fetchWithTimeoutArray(url, 12000);
     text = new TextDecoder('gbk').decode(resp);
   } catch (e) {
     const buf = await fetchXHRArray(url);
@@ -138,7 +138,7 @@ function fetchXHRArray(url) {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
-      xhr.timeout = 8000;
+      xhr.timeout = 12000;
       xhr.responseType = 'arraybuffer';
       xhr.onload = () => resolve(xhr.response);
       xhr.onerror = () => reject(new Error('XHR 网络错误'));
@@ -532,7 +532,10 @@ async function probeAllSources() {
 // ---------- 主循环 ----------
 let _loopTimer = null;
 let _failCount = 0;
+let _refreshing = false; // 防堆积: 上一次未完成则跳过
 async function refresh() {
+  if (_refreshing) { _loopTimer = setTimeout(refresh, REFRESH_MS); return; }
+  _refreshing = true;
   try {
     const snap = await fetchSnapshot();
     renderSnapshot(snap);
@@ -545,11 +548,12 @@ async function refresh() {
     if (_failCount >= 2) {
       badge.textContent = '⚠ 获取失败';
       badge.classList.add('badge-err');
-      badge.title = `${e.message}\n如长期失败,可能是:\n1. 浏览器扩展(广告拦截/隐私)屏蔽了行情接口\n2. 当前网络限速\n3. 浏览器过旧不支持 fetch/AbortController\n可尝试切换数据源或禁用扩展`;
+      badge.title = `${e.message}\n如长期失败,可能是:\n1. 浏览器扩展(广告拦截/隐私)屏蔽了行情接口\n2. 当前网络限速(GitHub Pages海外节点访问国内接口延迟高)\n3. 浏览器过旧不支持 fetch/AbortController\n可尝试切换数据源或禁用扩展`;
     } else {
       badge.textContent = '● 重试中';
     }
   } finally {
+    _refreshing = false;
     _loopTimer = setTimeout(refresh, REFRESH_MS);
   }
 }
