@@ -70,11 +70,12 @@ function fetchWithTimeout(url, ms) {
 
 async function fetchEM(secids, fields) {
   let lastErr = null;
-  for (let i = 0; i < EM_HOSTS.length; i++) {
+  // 每个域名超时5秒, 最多尝试2个域名, 避免总耗时过长导致刷新堆积
+  for (let i = 0; i < Math.min(2, EM_HOSTS.length); i++) {
     const hostIdx = (_emHostIdx + i) % EM_HOSTS.length;
     const url = `${EM_HOSTS[hostIdx]}?fields=${fields}&secids=${secids}&fltt=2`;
     try {
-      const j = await fetchWithTimeout(url, 8000);
+      const j = await fetchWithTimeout(url, 5000);
       if (j && j.data && j.data.diff) {
         _emHostIdx = hostIdx;
         return j.data.diff;
@@ -82,14 +83,13 @@ async function fetchEM(secids, fields) {
       lastErr = new Error('返回数据为空');
     } catch (e) { lastErr = e; }
   }
-  for (let i = 0; i < EM_HOSTS.length; i++) {
-    const url = `${EM_HOSTS[i]}?fields=${fields}&secids=${secids}&fltt=2`;
-    try {
-      const j = await fetchXHR(url);
-      if (j && j.data && j.data.diff) { _emHostIdx = i; return j.data.diff; }
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('所有数据源均失败');
+  // XHR 兜底(5秒超时)
+  try {
+    const url = `${EM_HOSTS[_emHostIdx]}?fields=${fields}&secids=${secids}&fltt=2`;
+    const j = await fetchXHR(url);
+    if (j && j.data && j.data.diff) return j.data.diff;
+  } catch (e) { lastErr = e; }
+  throw lastErr || new Error('东方财富请求失败');
 }
 
 function fetchXHR(url) {
@@ -97,7 +97,7 @@ function fetchXHR(url) {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
-      xhr.timeout = 8000;
+      xhr.timeout = 5000;
       xhr.onload = () => { try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(e); } };
       xhr.onerror = () => reject(new Error('XHR 网络错误'));
       xhr.ontimeout = () => reject(new Error('XHR 超时'));
@@ -112,10 +112,9 @@ async function fetchTencent(codes) {
   const url = `https://qt.gtimg.cn/q=${codes.join(',')}`;
   let text;
   try {
-    const resp = await fetchWithTimeoutArray(url, 8000);
+    const resp = await fetchWithTimeoutArray(url, 5000);
     text = new TextDecoder('gbk').decode(resp);
   } catch (e) {
-    // fallback XHR
     const buf = await fetchXHRArray(url);
     text = new TextDecoder('gbk').decode(buf);
   }
