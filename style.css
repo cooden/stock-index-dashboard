@@ -78,6 +78,20 @@ body {
 .dot.fail { background: var(--red); }
 .dot.unknown { background: var(--txt-dim); }
 
+/* 数据源状态条(新) */
+.source-bar { font-size: 12px; align-items: center; }
+.src-cur { color: var(--txt-dim); margin-right: 6px; }
+.src-cur b { color: var(--txt); }
+.src-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--txt-dim); cursor: default;
+}
+.src-item.src-active { border-color: var(--gold); color: var(--txt); }
+.src-item.src-ok { color: var(--green); }
+.src-item.src-err { color: var(--red); }
+.src-item.src-dim { color: var(--txt-dim); }
+
 /* 主区 */
 .container { max-width: 1200px; width: 100%; margin: 0 auto; padding: 14px 18px; flex: 1; }
 .block { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }

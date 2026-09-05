@@ -9,15 +9,16 @@ const sign = n => (n > 0 ? '+' : '');
 const cls = n => (n === null || n === 0 ? '' : n > 0 ? 'up' : 'down');
 const bgcls = n => (n === null || n === 0 ? '' : n > 0 ? 'bg-up' : 'bg-down');
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+function pad2(n) { return String(n).padStart(2, '0'); }
 
 // 6大指数(中证全指末尾)
 const IDX_DEFS = [
-  { code: 'sh000001', name: '上证指数', region: '中国大陆', bare: '000001' },
-  { code: 'sz399006', name: '创业板指', region: '中国大陆', bare: '399006' },
-  { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688' },
-  { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225' },
-  { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11' },
-  { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985' }
+  { code: 'sh000001', name: '上证指数', region: '中国大陆', bare: '000001', market: 'CN' },
+  { code: 'sz399006', name: '创业板指', region: '中国大陆', bare: '399006', market: 'CN' },
+  { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688', market: 'CN' },
+  { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225',   market: 'JP' },
+  { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11',   market: 'KR' },
+  { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN' }
 ];
 const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985';
 
@@ -38,19 +39,26 @@ const RANK_DEFS = [
 ];
 const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000905,1.000852,2.932000,1.000985,1.000688,2.931643,0.399001,0.399006,0.399102';
 
+// ============== 数据源注册表 ==============
+const SOURCES = [
+  { id: 'eastmoney', name: '东方财富', desc: '数据最全(全指数+日韩+涨跌家数+成交额),无需Referer' },
+  { id: 'tencent',   name: '腾讯财经', desc: 'GBK行情,支持A股指数;日韩/涨跌家数自动回退东方财富' },
+  { id: 'sina',      name: '新浪财经', desc: '经典行情源,需Referer;A股指数可用,日韩回退东方财富' }
+];
+let activeSource = 'eastmoney';
+// 健康状态缓存
+const sourceHealth = {};
+
 // ---------- 东方财富直连 ----------
-// 多域名容灾: 主域名失败自动切换备用,提高不同浏览器/网络下的成功率
 const EM_HOSTS = [
   'https://push2.eastmoney.com/api/qt/ulist.np/get',
   'https://push2his.eastmoney.com/api/qt/ulist.np/get',
   'https://82.push2.eastmoney.com/api/qt/ulist.np/get'
 ];
-let _emHostIdx = 0; // 当前使用的主机索引,失败自动切换
+let _emHostIdx = 0;
 
-// 兼容性超时: 用传统 AbortController + setTimeout,避免旧浏览器不支持 AbortSignal.timeout
 function fetchWithTimeout(url, ms) {
   if (typeof AbortController === 'undefined') {
-    // 极旧浏览器,直接 fetch 不带超时
     return fetch(url).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
   }
   const ctrl = new AbortController();
@@ -62,66 +70,161 @@ function fetchWithTimeout(url, ms) {
 
 async function fetchEM(secids, fields) {
   let lastErr = null;
-  // 阶段1: fetch + 多域名容灾
   for (let i = 0; i < EM_HOSTS.length; i++) {
     const hostIdx = (_emHostIdx + i) % EM_HOSTS.length;
     const url = `${EM_HOSTS[hostIdx]}?fields=${fields}&secids=${secids}&fltt=2`;
     try {
       const j = await fetchWithTimeout(url, 8000);
       if (j && j.data && j.data.diff) {
-        _emHostIdx = hostIdx; // 命中后固定使用该域名,减少切换
+        _emHostIdx = hostIdx;
         return j.data.diff;
       }
       lastErr = new Error('返回数据为空');
-    } catch (e) {
-      lastErr = e;
-      // 继续尝试下一个域名
-    }
+    } catch (e) { lastErr = e; }
   }
-  // 阶段2: XHR 最终兜底(适配禁用fetch/旧浏览器/被扩展拦截但XHR可通的环境)
   for (let i = 0; i < EM_HOSTS.length; i++) {
     const url = `${EM_HOSTS[i]}?fields=${fields}&secids=${secids}&fltt=2`;
     try {
       const j = await fetchXHR(url);
-      if (j && j.data && j.data.diff) {
-        _emHostIdx = i;
-        return j.data.diff;
-      }
-    } catch (e) {
-      lastErr = e;
-    }
+      if (j && j.data && j.data.diff) { _emHostIdx = i; return j.data.diff; }
+    } catch (e) { lastErr = e; }
   }
-  throw lastErr || new Error('所有数据源均失败(请检查浏览器扩展是否拦截了eastmoney.com)');
+  throw lastErr || new Error('所有数据源均失败');
 }
 
-// XHR fallback: 极旧或受限浏览器(如禁用fetch时)的最终兜底
 function fetchXHR(url) {
   return new Promise((resolve, reject) => {
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
       xhr.timeout = 8000;
-      xhr.onload = () => {
-        try { resolve(JSON.parse(xhr.responseText)); }
-        catch (e) { reject(e); }
-      };
-      xhr.onerror = () => reject(new Error('XHR 网络错误(可能被浏览器扩展拦截)'));
+      xhr.onload = () => { try { resolve(JSON.parse(xhr.responseText)); } catch (e) { reject(e); } };
+      xhr.onerror = () => reject(new Error('XHR 网络错误'));
       xhr.ontimeout = () => reject(new Error('XHR 超时'));
       xhr.send();
     } catch (e) { reject(e); }
   });
 }
 
-// ---------- 行情快照 ----------
-async function fetchSnapshot() {
-  const [idxList, rankList, brList] = await Promise.all([
-    fetchEM(IDX_SECIDS, 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17'),
-    fetchEM(RANK_SECIDS, 'f2,f3,f4,f12,f14'),
-    fetchEM('1.000001,0.399106', 'f12,f14,f104,f105,f106')
-  ]);
+// ---------- 腾讯财经 ----------
+// qt.gtimg.cn 支持 CORS, 返回 GBK 编码的 JS 变量赋值: v_sh000001="..."
+async function fetchTencent(codes) {
+  const url = `https://qt.gtimg.cn/q=${codes.join(',')}`;
+  let text;
+  try {
+    const resp = await fetchWithTimeoutArray(url, 8000);
+    text = new TextDecoder('gbk').decode(resp);
+  } catch (e) {
+    // fallback XHR
+    const buf = await fetchXHRArray(url);
+    text = new TextDecoder('gbk').decode(buf);
+  }
+  const map = {};
+  for (const line of text.split(';')) {
+    const m = line.match(/v_(\w+)\s*=\s*"([^"]*)/);
+    if (m) map[m[1]] = m[2];
+  }
+  return map;
+}
+function fetchWithTimeoutArray(url, ms) {
+  if (typeof AbortController === 'undefined') return fetch(url).then(r => r.arrayBuffer());
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal })
+    .then(r => { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+    .catch(e => { clearTimeout(t); throw e; });
+}
+function fetchXHRArray(url) {
+  return new Promise((resolve, reject) => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 8000;
+      xhr.responseType = 'arraybuffer';
+      xhr.onload = () => resolve(xhr.response);
+      xhr.onerror = () => reject(new Error('XHR 网络错误'));
+      xhr.ontimeout = () => reject(new Error('XHR 超时'));
+      xhr.send();
+    } catch (e) { reject(e); }
+  });
+}
 
-  const indices = IDX_DEFS.map(def => {
-    const row = idxList.find(d => d.f12 === def.bare);
+// ---------- 新浪财经 ----------
+// hq.sinajs.cn 检查 Referer, 纯前端 fetch 会被拒; 用 script 标签(JSONP风格)加载
+// 新浪返回: var hq_str_sh000001="..."
+function fetchSina(codes) {
+  return new Promise((resolve, reject) => {
+    const url = `https://hq.sinajs.cn/list=${codes.join(',')}`;
+    const s = document.createElement('script');
+    let done = false;
+    const cleanup = () => { if (s.parentNode) s.parentNode.removeChild(s); };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      const map = {};
+      for (const c of codes) {
+        const v = window['hq_str_' + c];
+        if (v) map[c] = v;
+      }
+      cleanup();
+      if (Object.keys(map).length) resolve(map);
+      else reject(new Error('新浪无数据(可能被Referer限制)'));
+    };
+    s.src = url;
+    s.onload = finish;
+    s.onerror = () => { done = true; cleanup(); reject(new Error('新浪加载失败')); };
+    document.head.appendChild(s);
+    setTimeout(finish, 8000);
+  });
+}
+
+// ---------- 按数据源获取6大指数 ----------
+async function fetchIndicesBySource(sourceId) {
+  if (sourceId === 'tencent') {
+    const cnCodes = IDX_DEFS.filter(d => d.market === 'CN').map(d => d.code);
+    const map = await fetchTencent(cnCodes);
+    return IDX_DEFS.map(def => {
+      if (def.market !== 'CN') {
+        return { ...def, price: null, pct: null, change: null, prevClose: null, open: null, high: null, low: null, available: false, unavailableReason: '腾讯不支持海外指数' };
+      }
+      const raw = map[def.code];
+      if (!raw) return { ...def, price: null, pct: null, change: null, available: false, unavailableReason: '无数据' };
+      const f = raw.split('~');
+      const current = num(f[3]), prevClose = num(f[4]);
+      const change = (current !== null && prevClose !== null) ? +(current - prevClose).toFixed(4) : null;
+      const pct = (change !== null && prevClose) ? +(change / prevClose * 100).toFixed(2) : null;
+      return {
+        code: def.code, name: f[1] || def.name, region: def.region,
+        price: current, prevClose, open: num(f[5]),
+        high: num(f[33]) || null, low: num(f[34]) || null,
+        change, pct, available: current !== null
+      };
+    });
+  }
+  if (sourceId === 'sina') {
+    const cnCodes = IDX_DEFS.filter(d => d.market === 'CN').map(d => d.code);
+    const map = await fetchSina(cnCodes);
+    return IDX_DEFS.map(def => {
+      if (def.market !== 'CN') {
+        return { ...def, price: null, pct: null, change: null, prevClose: null, open: null, high: null, low: null, available: false, unavailableReason: '新浪不支持海外指数' };
+      }
+      const raw = map[def.code];
+      if (!raw) return { ...def, price: null, pct: null, change: null, available: false, unavailableReason: '无数据' };
+      const f = raw.split(',');
+      const prevClose = num(f[2]), current = num(f[3]);
+      const change = (current !== null && prevClose !== null) ? +(current - prevClose).toFixed(4) : null;
+      const pct = (change !== null && prevClose) ? +(change / prevClose * 100).toFixed(2) : null;
+      return {
+        code: def.code, name: f[0] || def.name, region: def.region,
+        price: current, prevClose, open: num(f[1]), high: num(f[4]), low: num(f[5]),
+        change, pct, available: current !== null
+      };
+    });
+  }
+  // 默认东方财富
+  const list = await fetchEM(IDX_SECIDS, 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17');
+  return IDX_DEFS.map(def => {
+    const row = list.find(d => d.f12 === def.bare);
     if (!row) return { ...def, price: null, pct: null, change: null, prevClose: null, open: null, high: null, low: null, available: false };
     return {
       code: def.code, name: row.f14 || def.name, region: def.region,
@@ -131,6 +234,41 @@ async function fetchSnapshot() {
       available: num(row.f2) !== null
     };
   });
+}
+
+// 东方财富补充获取日韩指数(当主源不支持时)
+async function fetchEMJapanKorea() {
+  const list = await fetchEM('100.N225,100.KS11', 'f2,f3,f4,f12,f14,f15,f16,f17');
+  const result = {};
+  for (const def of IDX_DEFS.filter(d => d.market !== 'CN')) {
+    const row = list.find(d => d.f12 === def.bare);
+    if (row) result[def.code] = {
+      code: def.code, name: row.f14 || def.name, region: def.region,
+      price: num(row.f2), pct: num(row.f3), change: num(row.f4),
+      open: num(row.f17), high: num(row.f15), low: num(row.f16),
+      prevClose: num(row.f2 - row.f4), available: num(row.f2) !== null,
+      supplementSource: '东方财富'
+    };
+  }
+  return result;
+}
+
+// ---------- 行情快照 ----------
+async function fetchSnapshot() {
+  const [idxRaw, rankList, brList] = await Promise.all([
+    fetchIndicesBySource(activeSource),
+    fetchEM(RANK_SECIDS, 'f2,f3,f4,f12,f14'),
+    fetchEM('1.000001,0.399106', 'f12,f14,f104,f105,f106')
+  ]);
+
+  // 非东方财富源: 日韩指数自动回退东方财富补充
+  let indices = idxRaw;
+  if (activeSource !== 'eastmoney') {
+    try {
+      const supplement = await fetchEMJapanKorea();
+      indices = idxRaw.map(d => supplement[d.code] || d);
+    } catch {}
+  }
 
   const rankIndices = RANK_DEFS.map(def => {
     const row = rankList.find(d => d.f12 === def.bare);
@@ -146,9 +284,13 @@ async function fetchSnapshot() {
   }
   const breadth = { advancing, declining, flat, total: advancing + declining + flat };
 
-  // 成交额: 中证全指 f6, localStorage 持久化历史
-  const tRow = idxList.find(d => d.f12 === '000985');
-  const turnover = processTurnover(num(tRow?.f6));
+  // 成交额: 始终东方财富(中证全指 f6)
+  let turnover = null;
+  try {
+    const tList = await fetchEM('1.000985', 'f6,f12,f14');
+    const tRow = tList.find(d => d.f12 === '000985');
+    turnover = processTurnover(num(tRow?.f6));
+  } catch {}
 
   return { indices, rankIndices, breadth, turnover };
 }
@@ -194,10 +336,12 @@ function renderIndices(indices) {
   grid.innerHTML = indices.map(idx => {
     const up = (idx.pct ?? 0) > 0, down = (idx.pct ?? 0) < 0;
     const dir = up ? 'up' : down ? 'down' : '';
+    const supp = idx.supplementSource ? `<span class="supplement-tag" title="主源不支持,由${idx.supplementSource}补全">补充源</span>` : '';
     const unavail = idx.available === false ? `<div style="color:var(--txt-dim);font-size:12px;margin-top:8px">${idx.unavailableReason || '暂不可用'}</div>` : '';
     return `
       <div class="idx-card ${dir}">
         <span class="idx-region">${idx.region || ''}</span>
+        ${supp}
         <div class="idx-name">${idx.name || ''}</div>
         <div class="idx-code">${idx.code || ''}</div>
         <div class="idx-price ${cls(idx.pct)}">${idx.price === null ? '--' : fmt(idx.price, 2)}</div>
@@ -299,6 +443,67 @@ function applyGrayMode(on) {
   applyGrayMode(on);
 })();
 
+// ---------- 数据源 UI ----------
+function initSourceSelect() {
+  const sel = $('srcSelect');
+  sel.innerHTML = SOURCES.map(s => `<option value="${s.id}" title="${s.desc}">${s.name}</option>`).join('');
+  // 恢复上次选择
+  try {
+    const saved = localStorage.getItem('activeSource');
+    if (saved && SOURCES.find(s => s.id === saved)) activeSource = saved;
+  } catch {}
+  sel.value = activeSource;
+  sel.addEventListener('change', () => {
+    activeSource = sel.value;
+    try { localStorage.setItem('activeSource', activeSource); } catch {}
+    renderSourceBar();
+    // 立即刷新一次
+    clearTimeout(_loopTimer);
+    refresh();
+  });
+}
+
+function renderSourceBar() {
+  const bar = $('sourceBar');
+  if (!bar) return;
+  const cur = SOURCES.find(s => s.id === activeSource);
+  const parts = SOURCES.map(s => {
+    const h = sourceHealth[s.id];
+    let dot = '○', cls2 = 'src-dim';
+    if (h) {
+      if (h.ok) { dot = '●'; cls2 = 'src-ok'; }
+      else { dot = '●'; cls2 = 'src-err'; }
+    }
+    const active = s.id === activeSource ? ' src-active' : '';
+    return `<span class="src-item ${cls2}${active}" title="${s.desc}">${dot} ${s.name}${h && h.latency ? ` ${h.latency}ms` : ''}</span>`;
+  });
+  bar.innerHTML = `<span class="src-cur">当前: <b>${cur.name}</b></span>` + parts.join('');
+}
+
+// 健康检测: 探测各数据源
+async function probeAllSources() {
+  const btn = $('healthBtn');
+  if (btn) btn.textContent = '检测中…';
+  const probes = SOURCES.map(async s => {
+    const t0 = Date.now();
+    try {
+      if (s.id === 'eastmoney') {
+        await fetchEM('1.000001', 'f2,f3');
+      } else if (s.id === 'tencent') {
+        await fetchTencent(['sh000001']);
+      } else if (s.id === 'sina') {
+        await fetchSina(['sh000001']);
+      }
+      sourceHealth[s.id] = { ok: true, latency: Date.now() - t0 };
+    } catch (e) {
+      sourceHealth[s.id] = { ok: false, latency: Date.now() - t0, err: e.message };
+    }
+  });
+  await Promise.all(probes);
+  renderSourceBar();
+  if (btn) btn.textContent = '健康检测';
+}
+
 // ---------- 主循环 ----------
 let _loopTimer = null;
 let _failCount = 0;
@@ -313,10 +518,9 @@ async function refresh() {
     _failCount++;
     const badge = $('refreshBadge');
     if (_failCount >= 2) {
-      // 连续2次失败时给出诊断提示
       badge.textContent = '⚠ 获取失败';
       badge.classList.add('badge-err');
-      badge.title = `${e.message}\n如长期失败,可能是:\n1. 浏览器扩展(广告拦截/隐私)屏蔽了 push2.eastmoney.com\n2. 当前网络限速\n3. 浏览器过旧不支持 fetch/AbortController\n请尝试禁用扩展或更换浏览器`;
+      badge.title = `${e.message}\n如长期失败,可能是:\n1. 浏览器扩展(广告拦截/隐私)屏蔽了行情接口\n2. 当前网络限速\n3. 浏览器过旧不支持 fetch/AbortController\n可尝试切换数据源或禁用扩展`;
     } else {
       badge.textContent = '● 重试中';
     }
@@ -324,7 +528,12 @@ async function refresh() {
     _loopTimer = setTimeout(refresh, REFRESH_MS);
   }
 }
+
+// ---------- 初始化 ----------
+initSourceSelect();
+renderSourceBar();
 refresh();
 
 // ---------- 事件绑定 ----------
 $('grayBtn').addEventListener('click', () => applyGrayMode(!document.body.classList.contains('gray-mode')));
+$('healthBtn').addEventListener('click', probeAllSources);
