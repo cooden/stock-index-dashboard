@@ -254,52 +254,75 @@ async function fetchEMJapanKorea() {
 }
 
 // ---------- 行情快照 ----------
-async function fetchSnapshot() {
-  // 各请求独立容错, 避免一个超时导致整屏空白
-  const [idxRaw, rankList, brList] = await Promise.all([
-    fetchIndicesBySource(activeSource).catch(e => { console.warn('indices failed:', e.message); return []; }),
-    fetchEM(RANK_SECIDS, 'f2,f3,f4,f12,f14').catch(e => { console.warn('rank failed:', e.message); return []; }),
-    fetchEM('1.000001,0.399106', 'f12,f14,f104,f105,f106').catch(e => { console.warn('breadth failed:', e.message); return []; })
-  ]);
+// 合并为单个东方财富请求(指数+排名+涨跌家数+成交额), 减少并发避免超时
+const ALL_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985,1.000016,1.000300,1.000905,1.000852,2.932000,2.931643,0.399001,0.399102,0.399106';
+const ALL_FIELDS = 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17,f104,f105,f106';
 
-  // 非东方财富源: 日韩指数自动回退东方财富补充
-  let indices = idxRaw;
-  if (activeSource !== 'eastmoney' && idxRaw.length) {
-    try {
-      const supplement = await fetchEMJapanKorea();
-      indices = idxRaw.map(d => supplement[d.code] || d);
-    } catch {}
+async function fetchSnapshot() {
+  // 步骤1: 从选中的数据源获取6大指数
+  let idxRaw = [];
+  try {
+    idxRaw = await fetchIndicesBySource(activeSource);
+  } catch (e) {
+    console.warn('main source failed, fallback eastmoney:', e.message);
+    idxRaw = await fetchIndicesBySource('eastmoney');
   }
 
+  // 步骤2: 单个东方财富请求获取排名+涨跌家数+成交额
+  let allData = [];
+  try {
+    allData = await fetchEM(ALL_SECIDS, ALL_FIELDS);
+  } catch (e) {
+    console.warn('allData failed:', e.message);
+  }
+
+  // 非东方财富源: 日韩指数从 allData 补充
+  if (activeSource !== 'eastmoney' && idxRaw.length) {
+    for (const def of IDX_DEFS.filter(d => d.market !== 'CN')) {
+      const row = allData.find(d => d.f12 === def.bare);
+      if (row) {
+        const idx = idxRaw.findIndex(d => d.code === def.code);
+        if (idx >= 0) {
+          idxRaw[idx] = {
+            code: def.code, name: row.f14 || def.name, region: def.region,
+            price: num(row.f2), pct: num(row.f3), change: num(row.f4),
+            open: num(row.f17), high: num(row.f15), low: num(row.f16),
+            prevClose: num(row.f2 - row.f4), available: num(row.f2) !== null,
+            supplementSource: '东方财富'
+          };
+        }
+      }
+    }
+  }
+
+  // 排名
   const rankIndices = RANK_DEFS.map(def => {
-    const row = (rankList || []).find(d => d.f12 === def.bare);
+    const row = allData.find(d => d.f12 === def.bare);
     if (!row) return { ...def, price: null, pct: null, available: false };
     return { code: def.code, name: row.f14 || def.name, price: num(row.f2), pct: num(row.f3), change: num(row.f4), available: num(row.f2) !== null };
   });
 
+  // 涨跌家数 (1.000001 沪市 + 0.399106 深市)
   let advancing = 0, declining = 0, flat = 0;
-  for (const d of (brList || [])) {
-    advancing += parseInt(d.f104) || 0;
-    declining += parseInt(d.f105) || 0;
-    flat += parseInt(d.f106) || 0;
+  for (const d of allData) {
+    if (d.f12 === '000001' || d.f12 === '399106') {
+      advancing += parseInt(d.f104) || 0;
+      declining += parseInt(d.f105) || 0;
+      flat += parseInt(d.f106) || 0;
+    }
   }
   const breadth = { advancing, declining, flat, total: advancing + declining + flat };
 
-  // 成交额: 始终东方财富(中证全指 f6)
+  // 成交额: 中证全指 f6
   let turnover = null;
-  try {
-    const tList = await fetchEM('1.000985', 'f6,f12,f14');
-    const tRow = (tList || []).find(d => d.f12 === '000985');
-    turnover = processTurnover(num(tRow?.f6));
-  } catch {}
+  const tRow = allData.find(d => d.f12 === '000985');
+  if (tRow) turnover = processTurnover(num(tRow.f6));
 
-  // 至少要有一个指数数据, 否则算失败
-  if (!indices || !indices.length) throw new Error('所有指数数据获取失败');
-  return { indices, rankIndices, breadth, turnover };
+  if (!idxRaw.length) throw new Error('指数数据获取失败');
+  return { indices: idxRaw, rankIndices, breadth, turnover };
 }
 
 // ---------- 成交额 + localStorage 历史 ----------
-function pad2(n) { return String(n).padStart(2, '0'); }
 function processTurnover(amount) {
   if (amount === null) return null;
   const now = new Date();
