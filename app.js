@@ -255,15 +255,16 @@ async function fetchEMJapanKorea() {
 
 // ---------- 行情快照 ----------
 async function fetchSnapshot() {
+  // 各请求独立容错, 避免一个超时导致整屏空白
   const [idxRaw, rankList, brList] = await Promise.all([
-    fetchIndicesBySource(activeSource),
-    fetchEM(RANK_SECIDS, 'f2,f3,f4,f12,f14'),
-    fetchEM('1.000001,0.399106', 'f12,f14,f104,f105,f106')
+    fetchIndicesBySource(activeSource).catch(e => { console.warn('indices failed:', e.message); return []; }),
+    fetchEM(RANK_SECIDS, 'f2,f3,f4,f12,f14').catch(e => { console.warn('rank failed:', e.message); return []; }),
+    fetchEM('1.000001,0.399106', 'f12,f14,f104,f105,f106').catch(e => { console.warn('breadth failed:', e.message); return []; })
   ]);
 
   // 非东方财富源: 日韩指数自动回退东方财富补充
   let indices = idxRaw;
-  if (activeSource !== 'eastmoney') {
+  if (activeSource !== 'eastmoney' && idxRaw.length) {
     try {
       const supplement = await fetchEMJapanKorea();
       indices = idxRaw.map(d => supplement[d.code] || d);
@@ -271,13 +272,13 @@ async function fetchSnapshot() {
   }
 
   const rankIndices = RANK_DEFS.map(def => {
-    const row = rankList.find(d => d.f12 === def.bare);
+    const row = (rankList || []).find(d => d.f12 === def.bare);
     if (!row) return { ...def, price: null, pct: null, available: false };
     return { code: def.code, name: row.f14 || def.name, price: num(row.f2), pct: num(row.f3), change: num(row.f4), available: num(row.f2) !== null };
   });
 
   let advancing = 0, declining = 0, flat = 0;
-  for (const d of brList) {
+  for (const d of (brList || [])) {
     advancing += parseInt(d.f104) || 0;
     declining += parseInt(d.f105) || 0;
     flat += parseInt(d.f106) || 0;
@@ -288,10 +289,12 @@ async function fetchSnapshot() {
   let turnover = null;
   try {
     const tList = await fetchEM('1.000985', 'f6,f12,f14');
-    const tRow = tList.find(d => d.f12 === '000985');
+    const tRow = (tList || []).find(d => d.f12 === '000985');
     turnover = processTurnover(num(tRow?.f6));
   } catch {}
 
+  // 至少要有一个指数数据, 否则算失败
+  if (!indices || !indices.length) throw new Error('所有指数数据获取失败');
   return { indices, rankIndices, breadth, turnover };
 }
 
