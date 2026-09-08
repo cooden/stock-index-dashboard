@@ -323,7 +323,6 @@ async function fetchSnapshot() {
 
 // ---------- 成交额 + localStorage 历史 ----------
 function processTurnover(amount) {
-  if (amount === null) return null;
   const now = new Date();
   const ds = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
   const mm = Math.floor(now.getMinutes() / 5) * 5;
@@ -339,7 +338,18 @@ function processTurnover(amount) {
   }
   store.today = store.today || { date: ds, samples: {} };
   store.today.samples = store.today.samples || {};
-  store.today.samples[tk] = amount;
+
+  // 非交易时段 f6 可能返回 0 或 null, 用当日最近一次有效样本兜底
+  let effAmount = amount;
+  if (!amount || amount <= 0) {
+    const todayKeys = Object.keys(store.today.samples).sort();
+    if (todayKeys.length) {
+      effAmount = store.today.samples[todayKeys[todayKeys.length - 1]];
+    }
+  }
+  if (effAmount === null || effAmount === undefined || effAmount <= 0) return null;
+
+  store.today.samples[tk] = effAmount;
   try { localStorage.setItem('turnover', JSON.stringify(store)); } catch {}
 
   let yDate = null, yAmount = null;
@@ -351,7 +361,7 @@ function processTurnover(amount) {
       if (keys.length) { yDate = d; yAmount = samples[keys[keys.length - 1]]; break; }
     }
   }
-  return { amount, yesterdayDate: yDate, yesterdayAmount: yAmount, diffPct: yAmount ? +((amount - yAmount) / yAmount * 100).toFixed(2) : null };
+  return { amount: effAmount, yesterdayDate: yDate, yesterdayAmount: yAmount, diffPct: yAmount ? +((effAmount - yAmount) / yAmount * 100).toFixed(2) : null };
 }
 
 // ---------- 渲染 ----------
