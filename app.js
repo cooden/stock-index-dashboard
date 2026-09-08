@@ -406,20 +406,11 @@ function fmtAmount(n) {
 function renderTurnover(to) {
   const el = $('turnover');
   if (!to) { el.innerHTML = '<span class="meta-tip">暂无成交额数据</span>'; return; }
-  const diffPct = to.diffPct;
-  const yAmt = to.yesterdayAmount !== null ? fmtAmount(to.yesterdayAmount) : '--';
-  const diffHtml = diffPct === null
-    ? '<span class="meta-tip">较昨日此时:暂无历史(运行满1日后显示)</span>'
-    : `<span class="${diffPct >= 0 ? 'up' : 'down'}">较昨日此时 ${diffPct >= 0 ? '+' : ''}${diffPct}%</span>`;
   el.innerHTML = `
     <div class="to-row">
       <div class="to-main">
         <span class="to-val">${fmtAmount(to.amount)}</span>
         <span class="to-lbl">今日累计</span>
-      </div>
-      <div class="to-compare">
-        ${diffHtml}
-        <span class="meta-tip">昨日同时点 ${yAmt}</span>
       </div>
     </div>`;
   $('turnoverTime').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
@@ -432,10 +423,10 @@ function renderBreadth(b) {
     bar.innerHTML = '<div class="bar-green" style="width:50%"></div><div class="bar-red" style="width:50%"></div>';
     return;
   }
-  const advPct = (b.advancing / b.total * 100).toFixed(1);
+  const advPct = ((b.advancing + b.flat) / b.total * 100).toFixed(1);
   const decPct = (b.declining / b.total * 100).toFixed(1);
   bar.innerHTML =
-    `<div class="bar-green" style="width:${advPct}%" title="上涨 ${b.advancing}家"></div>` +
+    `<div class="bar-green" style="width:${advPct}%" title="上涨 ${b.advancing}家 + 平盘 ${b.flat}家"></div>` +
     `<div class="bar-red" style="width:${decPct}%" title="下跌 ${b.declining}家"></div>`;
 }
 
@@ -569,10 +560,79 @@ async function refresh() {
 }
 
 // ---------- 初始化 ----------
-initSourceSelect();
-renderSourceBar();
+if ($('srcSelect')) initSourceSelect();
+if ($('sourceBar')) renderSourceBar();
 refresh();
 
+// ---------- 基金涨幅榜(今日Top2, 含A/C类) ----------
+function fundBaseName(name) {
+  return name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
+}
+function fundClass(name) {
+  return /C类?\s*$/i.test(name) ? 'C' : 'A';
+}
+function fetchFundRanking() {
+  return new Promise((resolve) => {
+    try {
+      window.rankData = null;
+      const script = document.createElement('script');
+      script.src = 'http://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=desc&pi=1&pn=50&dx=1&_t=' + Date.now();
+      script.onload = () => {
+        setTimeout(() => {
+          const datas = (window.rankData && window.rankData.datas) || [];
+          const funds = datas.map(line => {
+            const p = line.split(',');
+            return { code: p[0], name: p[1], date: p[3], nav: parseFloat(p[4]), accumNav: parseFloat(p[5]), dayPct: parseFloat(p[6]) };
+          }).filter(f => Number.isFinite(f.dayPct));
+          resolve(funds);
+        }, 200);
+      };
+      script.onerror = () => resolve([]);
+      document.head.appendChild(script);
+      setTimeout(() => resolve([]), 8000);
+    } catch { resolve([]); }
+  });
+}
+function renderFundRanking(funds) {
+  const el = $('fundList');
+  if (!el) return;
+  if (!funds || !funds.length) { el.innerHTML = '<div class="loading">暂无数据</div>'; return; }
+  const groups = new Map();
+  for (const f of funds) {
+    const base = fundBaseName(f.name);
+    if (!groups.has(base)) groups.set(base, []);
+    groups.get(base).push(f);
+  }
+  const topGroups = [...groups.entries()]
+    .map(([base, list]) => ({ base, list, maxPct: Math.max(...list.map(f => f.dayPct)) }))
+    .sort((a, b) => b.maxPct - a.maxPct)
+    .slice(0, 2);
+  el.innerHTML = topGroups.map((g, gi) => {
+    const cls = g.maxPct >= 0 ? 'up' : 'down';
+    const items = g.list.map(f => {
+      const fc = fundClass(f.name);
+      const displayName = f.name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
+      return `<div class="rank-item fund-item">
+        <span class="fund-cls ${fc === 'C' ? 'c-tag' : 'a-tag'}">${fc}</span>
+        <span class="rank-name" title="${f.code}">${displayName}</span>
+        <span class="rank-val ${cls}">${f.dayPct >= 0 ? '+' : ''}${f.dayPct.toFixed(2)}%</span>
+      </div>`;
+    }).join('');
+    return `<div class="fund-group">
+      <div class="fund-group-head"><span class="rank-idx">${gi + 1}</span>${g.base}<span class="rank-val ${cls}">${g.maxPct >= 0 ? '+' : ''}${g.maxPct.toFixed(2)}%</span></div>
+      ${items}
+    </div>`;
+  }).join('') || '<div class="loading">暂无数据</div>';
+}
+async function refreshFunds() {
+  try {
+    const funds = await fetchFundRanking();
+    renderFundRanking(funds);
+  } catch {}
+}
+refreshFunds();
+setInterval(refreshFunds, 60000);
+
 // ---------- 事件绑定 ----------
-$('grayBtn').addEventListener('click', () => applyGrayMode(!document.body.classList.contains('gray-mode')));
-$('healthBtn').addEventListener('click', probeAllSources);
+$('grayBtn')?.addEventListener('click', () => applyGrayMode(!document.body.classList.contains('gray-mode')));
+$('healthBtn')?.addEventListener('click', probeAllSources);

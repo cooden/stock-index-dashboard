@@ -188,6 +188,18 @@ body {
 .rank-name { flex: 1; font-size: 13px; }
 .rank-pct { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* 基金涨幅榜 */
+.fund-group { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.fund-group-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--panel-2); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.fund-group-head .rank-idx { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--gold); color: #fff; font-size: 11px; flex: none; }
+.fund-group-head .rank-val { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fund-item { border: none; border-radius: 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+.fund-item:last-child { border-bottom: none; }
+.fund-cls { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 18px; border-radius: 4px; font-size: 10px; font-weight: 700; flex: none; margin-right: 8px; }
+.a-tag { background: #e8f4fd; color: #1976d2; }
+.c-tag { background: #fce4ec; color: #c2185b; }
+.fund-item .rank-name { font-size: 12px; }
+
 /* 灰白模式(上班不显眼): 中性灰底 + 弱化涨跌色 */
 body.gray-mode {
   --bg: #f0f0f0;
