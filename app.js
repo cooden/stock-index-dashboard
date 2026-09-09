@@ -576,14 +576,20 @@ function fetchFundRanking() {
     try {
       window.rankData = null;
       const script = document.createElement('script');
-      script.src = 'http://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=desc&pi=1&pn=50&dx=1&_t=' + Date.now();
+      // sc=6yzf 按近6月收益率排序, st=desc 降序
+      script.src = 'http://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=6yzf&st=desc&pi=1&pn=100&dx=1&_t=' + Date.now();
       script.onload = () => {
         setTimeout(() => {
           const datas = (window.rankData && window.rankData.datas) || [];
           const funds = datas.map(line => {
             const p = line.split(',');
-            return { code: p[0], name: p[1], date: p[3], nav: parseFloat(p[4]), accumNav: parseFloat(p[5]), dayPct: parseFloat(p[6]) };
-          }).filter(f => Number.isFinite(f.dayPct));
+            return {
+              code: p[0], name: p[1], date: p[3],
+              nav: parseFloat(p[4]), accumNav: parseFloat(p[5]),
+              dayPct: parseFloat(p[6]),
+              sixMonthPct: parseFloat(p[10]) // 近6月收益率
+            };
+          }).filter(f => Number.isFinite(f.sixMonthPct));
           resolve(funds);
         }, 200);
       };
@@ -597,30 +603,28 @@ function renderFundRanking(funds) {
   const el = $('fundList');
   if (!el) return;
   if (!funds || !funds.length) { el.innerHTML = '<div class="loading">暂无数据</div>'; return; }
-  const groups = new Map();
+  // 去重: 同基础名称(A/C类)只保留近6月涨幅最高的一个
+  const dedup = new Map();
   for (const f of funds) {
     const base = fundBaseName(f.name);
-    if (!groups.has(base)) groups.set(base, []);
-    groups.get(base).push(f);
+    if (!dedup.has(base) || f.sixMonthPct > dedup.get(base).sixMonthPct) {
+      dedup.set(base, f);
+    }
   }
-  const topGroups = [...groups.entries()]
-    .map(([base, list]) => ({ base, list, maxPct: Math.max(...list.map(f => f.dayPct)) }))
-    .sort((a, b) => b.maxPct - a.maxPct)
-    .slice(0, 2);
-  el.innerHTML = topGroups.map((g, gi) => {
-    const cls = g.maxPct >= 0 ? 'up' : 'down';
-    const items = g.list.map(f => {
-      const fc = fundClass(f.name);
-      const displayName = f.name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
-      return `<div class="rank-item fund-item">
-        <span class="fund-cls ${fc === 'C' ? 'c-tag' : 'a-tag'}">${fc}</span>
-        <span class="rank-name" title="${f.code}">${displayName}</span>
-        <span class="rank-val ${cls}">${f.dayPct >= 0 ? '+' : ''}${f.dayPct.toFixed(2)}%</span>
-      </div>`;
-    }).join('');
+  // 按近6月涨幅降序, 取第1名
+  const top = [...dedup.values()].sort((a, b) => b.sixMonthPct - a.sixMonthPct).slice(0, 1);
+
+  el.innerHTML = top.map((f, gi) => {
+    const cls = f.sixMonthPct >= 0 ? 'up' : 'down';
+    const fc = fundClass(f.name);
+    const displayName = f.name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
     return `<div class="fund-group">
-      <div class="fund-group-head"><span class="rank-idx">${gi + 1}</span>${g.base}<span class="rank-val ${cls}">${g.maxPct >= 0 ? '+' : ''}${g.maxPct.toFixed(2)}%</span></div>
-      ${items}
+      <div class="fund-group-head"><span class="rank-idx">${gi + 1}</span>${displayName}<span class="rank-val ${cls}">${f.sixMonthPct >= 0 ? '+' : ''}${f.sixMonthPct.toFixed(2)}%</span></div>
+      <div class="rank-item fund-item">
+        <span class="fund-cls ${fc === 'C' ? 'c-tag' : 'a-tag'}">${fc}</span>
+        <span class="rank-name" title="${f.code}">${f.code}</span>
+        <span class="rank-val ${cls}">${f.sixMonthPct >= 0 ? '+' : ''}${f.sixMonthPct.toFixed(2)}%</span>
+      </div>
     </div>`;
   }).join('') || '<div class="loading">暂无数据</div>';
 }
