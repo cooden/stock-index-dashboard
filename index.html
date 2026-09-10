@@ -17,10 +17,18 @@
       </div>
     </div>
     <div class="top-actions">
+      <div class="src-ctrl">
+        <label class="src-label">数据源</label>
+        <select id="srcSelect" title="切换行情数据来源"></select>
+        <button id="healthBtn" class="btn ghost" title="探测各数据源健康状态">健康检测</button>
+      </div>
       <div id="refreshBadge" class="refresh-badge">--</div>
       <button id="grayBtn" class="btn ghost" title="灰白模式(上班不显眼)">🌙 灰白</button>
     </div>
   </header>
+
+  <!-- 数据源状态条 -->
+  <section id="sourceBar" class="source-bar"></section>
 
   <main class="container">
     <!-- 实时指数(全宽, 悬浮侧边栏在右侧) -->
