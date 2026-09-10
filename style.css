@@ -142,10 +142,10 @@ body {
 }
 /* bar-green=上涨条(左,红) bar-red=下跌条(右,绿); 类名保留以兼容 app.js */
 .bar-green {
-  background: linear-gradient(90deg, #c5323a, #ea3943); transition: width .6s ease; min-width: 0;
+  background: linear-gradient(90deg, var(--up), var(--red)); transition: width .6s ease; min-width: 0;
 }
 .bar-red {
-  background: linear-gradient(90deg, #16c784, #0fa569); transition: width .6s ease; min-width: 0;
+  background: linear-gradient(90deg, var(--down), var(--green)); transition: width .6s ease; min-width: 0;
 }
 .breadth-foot { display: flex; justify-content: space-between; margin-top: 8px; gap: 12px; flex-wrap: wrap; }
 
