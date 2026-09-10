@@ -42,8 +42,7 @@ const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000905,1.000852,2.932000,1.000
 // ============== 数据源注册表 ==============
 const SOURCES = [
   { id: 'eastmoney', name: '东方财富', desc: '数据最全(全指数+日韩+涨跌家数+成交额),无需Referer' },
-  { id: 'tencent',   name: '腾讯财经', desc: 'GBK行情,支持A股指数;日韩/涨跌家数自动回退东方财富' },
-  { id: 'sina',      name: '新浪财经', desc: '经典行情源,需Referer;A股指数可用,日韩回退东方财富' }
+  { id: 'tencent',   name: '腾讯财经', desc: 'GBK行情,支持A股指数;日韩/涨跌家数自动回退东方财富' }
 ];
 let activeSource = 'eastmoney';
 // 健康状态缓存
@@ -200,26 +199,6 @@ async function fetchIndicesBySource(sourceId) {
       };
     });
   }
-  if (sourceId === 'sina') {
-    const cnCodes = IDX_DEFS.filter(d => d.market === 'CN').map(d => d.code);
-    const map = await fetchSina(cnCodes);
-    return IDX_DEFS.map(def => {
-      if (def.market !== 'CN') {
-        return { ...def, price: null, pct: null, change: null, prevClose: null, open: null, high: null, low: null, available: false, unavailableReason: '新浪不支持海外指数' };
-      }
-      const raw = map[def.code];
-      if (!raw) return { ...def, price: null, pct: null, change: null, available: false, unavailableReason: '无数据' };
-      const f = raw.split(',');
-      const prevClose = num(f[2]), current = num(f[3]);
-      const change = (current !== null && prevClose !== null) ? +(current - prevClose).toFixed(4) : null;
-      const pct = (change !== null && prevClose) ? +(change / prevClose * 100).toFixed(2) : null;
-      return {
-        code: def.code, name: f[0] || def.name, region: def.region,
-        price: current, prevClose, open: num(f[1]), high: num(f[4]), low: num(f[5]),
-        change, pct, available: current !== null
-      };
-    });
-  }
   // 默认东方财富
   const list = await fetchEM(IDX_SECIDS, 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17');
   return IDX_DEFS.map(def => {
@@ -367,7 +346,7 @@ function processTurnover(amount) {
 // ---------- 渲染 ----------
 function renderIndices(indices) {
   const grid = $('indexGrid');
-  if (!indices || !indices.length) { grid.innerHTML = '<div class="loading">暂无数据</div>'; return; }
+  if (!indices || !indices.length) { return; }
   grid.innerHTML = indices.map(idx => {
     const up = (idx.pct ?? 0) > 0, down = (idx.pct ?? 0) < 0;
     const dir = up ? 'up' : down ? 'down' : '';
@@ -405,7 +384,7 @@ function fmtAmount(n) {
 
 function renderTurnover(to) {
   const el = $('turnover');
-  if (!to) { el.innerHTML = '<span class="meta-tip">暂无成交额数据</span>'; return; }
+  if (!to) { return; }
   el.innerHTML = `
     <div class="to-row">
       <div class="to-main">
@@ -432,7 +411,7 @@ function renderBreadth(b) {
 
 function renderRanking(indices) {
   const el = $('rankList');
-  if (!indices || !indices.length) { el.innerHTML = '<div class="loading">暂无数据</div>'; return; }
+  if (!indices || !indices.length) { return; }
   const list = indices.filter(i => i.available && i.pct !== null).slice().sort((a, b) => (b.pct || 0) - (a.pct || 0));
   el.innerHTML = list.map((i, idx) => {
     const dir = i.pct > 0 ? 'up' : i.pct < 0 ? 'down' : '';
@@ -635,7 +614,6 @@ async function refreshFunds() {
   } catch {}
 }
 refreshFunds();
-setInterval(refreshFunds, 60000);
 
 // ---------- 事件绑定 ----------
 $('grayBtn')?.addEventListener('click', () => applyGrayMode(!document.body.classList.contains('gray-mode')));
