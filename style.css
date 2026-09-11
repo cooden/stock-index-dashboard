@@ -292,10 +292,9 @@ body.gray-mode #grayBtn { background: var(--panel-2); border-color: var(--txt-di
   border-radius: 10px; overflow: hidden;
   box-shadow: var(--shadow);
   background: #fff;
-  position: relative;
-  opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility .3s ease;
+  display: none;
 }
-.sponsor-block:hover .sponsor-qr { opacity: 1; visibility: visible; }
+.sponsor-block:hover .sponsor-qr { display: block; }
 .sponsor-qr img {
   width: 100%; height: auto; display: block;
 }
