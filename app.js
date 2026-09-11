@@ -343,6 +343,22 @@ function processTurnover(amount) {
   return { amount: effAmount, yesterdayDate: yDate, yesterdayAmount: yAmount, diffPct: yAmount ? +((effAmount - yAmount) / yAmount * 100).toFixed(2) : null };
 }
 
+// ---------- 本地缓存(刷新页面时先显示旧数据,避免空白) ----------
+const CACHE_KEY = 'snapshotCache_v1';
+function saveCache(snap) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), snap }));
+  } catch {}
+}
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    return p && p.snap ? p : null;
+  } catch { return null; }
+}
+
 // ---------- 渲染 ----------
 function renderIndices(indices) {
   const grid = $('indexGrid');
@@ -433,6 +449,7 @@ function renderSnapshot(snap) {
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
   $('idxTime').textContent = `行情日期 ${todayStr} · 更新于 ${now.toLocaleTimeString('zh-CN')}`;
   $('refreshBadge').textContent = '● 实时';
+  saveCache(snap);
 }
 
 // ---------- 灰白模式 ----------
@@ -541,6 +558,17 @@ async function refresh() {
 // ---------- 初始化 ----------
 if ($('srcSelect')) initSourceSelect();
 if ($('sourceBar')) renderSourceBar();
+// 先读缓存立即渲染,避免接口失败时显示空白
+(() => {
+  const cached = loadCache();
+  if (cached && cached.snap) {
+    try { renderSnapshot(cached.snap); } catch {}
+    const ageMin = cached.ts ? Math.floor((Date.now() - cached.ts) / 60000) : null;
+    if (ageMin && ageMin > 1) {
+      $('refreshBadge').textContent = `缓存 ${ageMin}分钟前`;
+    }
+  }
+})();
 refresh();
 
 // ---------- 基金涨幅榜(今日Top2, 含A/C类) ----------
