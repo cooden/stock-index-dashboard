@@ -143,15 +143,17 @@ body {
 /* bar-green=上涨条(左,红) bar-red=下跌条(右,绿); 类名保留以兼容 app.js */
 .bar-green {
   background: linear-gradient(90deg, var(--up), var(--red)); transition: width .6s ease; min-width: 0;
+  display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; white-space: nowrap; overflow: hidden;
 }
 .bar-red {
   background: linear-gradient(90deg, var(--down), var(--green)); transition: width .6s ease; min-width: 0;
+  display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; white-space: nowrap; overflow: hidden;
 }
 .breadth-foot { display: flex; justify-content: space-between; margin-top: 8px; gap: 12px; flex-wrap: wrap; }
 
-/* 涨跌家数进度条(仅进度条,无文字) */
+/* 涨跌家数进度条 */
 .breadth-slim { padding: 8px 14px; margin-bottom: 14px; }
-.breadth-slim .breadth-bar { height: 10px; margin: 0; }
+.breadth-slim .breadth-bar { height: 18px; margin: 0; }
 
 /* 悬浮侧边栏: A股涨跌幅排名(桌面端固定在右侧, 小屏转为底部静态块) */
 .rank-sidebar {

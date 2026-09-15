@@ -421,8 +421,8 @@ function renderBreadth(b) {
   const advPct = (b.advancing / b.total * 100).toFixed(1);
   const decPct = ((b.declining + b.flat) / b.total * 100).toFixed(1);
   bar.innerHTML =
-    `<div class="bar-green" style="width:${advPct}%" title="上涨 ${b.advancing}家"></div>` +
-    `<div class="bar-red" style="width:${decPct}%" title="下跌 ${b.declining}家 + 平盘 ${b.flat}家"></div>`;
+    `<div class="bar-green" style="width:${advPct}%" title="上涨 ${b.advancing}家">${b.advancing}</div>` +
+    `<div class="bar-red" style="width:${decPct}%" title="下跌 ${b.declining}家 + 平盘 ${b.flat}家">${b.declining + b.flat}</div>`;
 }
 
 function renderRanking(indices) {
@@ -571,7 +571,7 @@ if ($('sourceBar')) renderSourceBar();
 })();
 refresh();
 
-// ---------- 基金涨幅榜(今日Top2, 含A/C类) ----------
+// ---------- 基金涨幅榜(近6月Top3, 去重A/C类) ----------
 function fundBaseName(name) {
   return name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
 }
@@ -618,8 +618,8 @@ function renderFundRanking(funds) {
       dedup.set(base, f);
     }
   }
-  // 按近6月涨幅降序, 取第1名
-  const top = [...dedup.values()].sort((a, b) => b.sixMonthPct - a.sixMonthPct).slice(0, 1);
+  // 按近6月涨幅降序, 取前3名
+  const top = [...dedup.values()].sort((a, b) => b.sixMonthPct - a.sixMonthPct).slice(0, 3);
 
   el.innerHTML = top.map((f, gi) => {
     const cls = f.sixMonthPct >= 0 ? 'up' : 'down';
