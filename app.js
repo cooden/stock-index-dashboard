@@ -418,11 +418,11 @@ function renderBreadth(b) {
     bar.innerHTML = '<div class="bar-green" style="width:50%"></div><div class="bar-red" style="width:50%"></div>';
     return;
   }
-  const advPct = ((b.advancing + b.flat) / b.total * 100).toFixed(1);
-  const decPct = (b.declining / b.total * 100).toFixed(1);
+  const advPct = (b.advancing / b.total * 100).toFixed(1);
+  const decPct = ((b.declining + b.flat) / b.total * 100).toFixed(1);
   bar.innerHTML =
-    `<div class="bar-green" style="width:${advPct}%" title="上涨 ${b.advancing}家 + 平盘 ${b.flat}家"></div>` +
-    `<div class="bar-red" style="width:${decPct}%" title="下跌 ${b.declining}家"></div>`;
+    `<div class="bar-green" style="width:${advPct}%" title="上涨 ${b.advancing}家"></div>` +
+    `<div class="bar-red" style="width:${decPct}%" title="下跌 ${b.declining}家 + 平盘 ${b.flat}家"></div>`;
 }
 
 function renderRanking(indices) {
