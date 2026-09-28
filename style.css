@@ -93,20 +93,24 @@ body {
 .src-item.src-dim { color: var(--txt-dim); }
 
 /* 主区 */
-.container { max-width: 1200px; width: 100%; margin: 0 auto; padding: 14px 18px; flex: 1; }
-.block { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
-.block-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
-.block-head h2 { font-size: 15px; font-weight: 700; }
+.container { max-width: 1200px; width: 100%; margin: 0 auto; padding: 10px 18px; flex: 1; }
+.block { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; gap: 10px; flex-wrap: wrap; }
+.block-head h2 { font-size: 14px; font-weight: 700; }
 .meta-time { font-size: 12px; color: var(--txt-dim); }
 .meta-tip { font-size: 12px; color: var(--txt-dim); }
 
+/* 主块内部间距压缩 */
+.main-block .index-grid { margin-bottom: 8px; }
+.main-block .turnover-wrap { margin-top: 4px; margin-bottom: 8px; }
+
 /* 指数卡片(九宫格:桌面3列,平板2列,小手机1列) */
-.index-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.index-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 @media (max-width: 760px) { .index-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 360px) { .index-grid { grid-template-columns: 1fr; } }
 .idx-card {
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
-  padding: 12px; position: relative; overflow: hidden; transition: transform .15s, border-color .15s;
+  padding: 10px; position: relative; overflow: hidden; transition: transform .15s, border-color .15s;
 }
 .idx-card:hover { transform: translateY(-2px); }
 .idx-card.up { border-color: rgba(234,57,67,.5); }
@@ -151,9 +155,10 @@ body {
 }
 .breadth-foot { display: flex; justify-content: space-between; margin-top: 8px; gap: 12px; flex-wrap: wrap; }
 
-/* 涨跌家数进度条 */
-.breadth-slim { padding: 8px 14px; margin-bottom: 14px; }
+/* 涨跌家数进度条(内嵌主块, 无独立边框) */
+.breadth-slim { padding: 0; margin-bottom: 0; }
 .breadth-slim .breadth-bar { height: 18px; margin: 0; }
+.main-block .breadth-bar { margin-top: 4px; }
 
 /* 悬浮侧边栏: A股涨跌幅排名(桌面端固定在右侧, 小屏转为底部静态块) */
 .rank-sidebar {
@@ -170,15 +175,15 @@ body {
   .container { padding-right: 300px; }
 }
 
-/* 今日实时成交额 */
-.turnover-block { margin-bottom: 14px; }
-.turnover-wrap { padding: 6px 4px; }
-.to-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+/* 今日实时成交额(无标题, 内嵌主块) */
+.turnover-block { margin-bottom: 0; }
+.turnover-wrap { padding: 2px 0; }
+.to-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .to-main { display: flex; flex-direction: column; align-items: flex-start; }
-.to-val { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -.5px; }
-.to-lbl { font-size: 12px; color: var(--txt-dim); margin-top: 4px; }
-.to-compare { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.to-compare .up, .to-compare .down { font-size: 15px; font-weight: 700; }
+.to-val { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -.5px; }
+.to-lbl { font-size: 11px; color: var(--txt-dim); margin-top: 2px; }
+.to-compare { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.to-compare .up, .to-compare .down { font-size: 13px; font-weight: 700; }
 
 /* 涨跌幅排名列表 */
 .rank-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; max-height: 560px; overflow-y: auto; }

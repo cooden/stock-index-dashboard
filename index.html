@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>股票指数实时看板</title>
-  <link rel="stylesheet" href="style.css?v=20260916" />
+  <link rel="stylesheet" href="style.css?v=20260928a" />
 </head>
 <body>
   <!-- 顶部栏 -->
@@ -31,8 +31,8 @@
   <section id="sourceBar" class="source-bar"></section>
 
   <main class="container">
-    <!-- 实时指数(全宽, 悬浮侧边栏在右侧) -->
-    <section class="block">
+    <!-- 实时指数 + 成交额 + 进度条 合并为一个 block, 信息更集中 -->
+    <section class="block main-block">
       <div class="block-head">
         <h2>实时指数</h2>
         <span id="idxTime" class="meta-time"></span>
@@ -40,19 +40,11 @@
       <div id="indexGrid" class="index-grid">
         <div class="loading">加载中…</div>
       </div>
-    </section>
 
-    <!-- 今日实时成交额(较昨日同时点) -->
-    <section class="block turnover-block">
-      <div class="block-head">
-        <h2>今日实时成交额</h2>
-        <span id="turnoverTime" class="meta-time">全A股(中证全指累计)</span>
-      </div>
+      <!-- 成交额(无标题, 仅数值 + 小字说明) -->
       <div id="turnover" class="turnover-wrap">加载中…</div>
-    </section>
 
-    <!-- 涨跌家数进度条(仅进度条,无文字行) -->
-    <section class="block breadth-slim">
+      <!-- 涨跌家数进度条 -->
       <div id="breadthBar" class="breadth-bar">
         <div class="bar-green" style="width:50%"></div>
         <div class="bar-red" style="width:50%"></div>
@@ -96,6 +88,6 @@
     <span>数据仅供学习参考,不构成投资建议。 © 2026 股票指数看板</span>
   </footer>
 
-  <script src="app.js?v=20260916"></script>
+  <script src="app.js?v=20260928a"></script>
 </body>
 </html>

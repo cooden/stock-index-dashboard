@@ -405,10 +405,9 @@ function renderTurnover(to) {
     <div class="to-row">
       <div class="to-main">
         <span class="to-val">${fmtAmount(to.amount)}</span>
-        <span class="to-lbl">今日累计</span>
+        <span class="to-lbl">全A股(中证全指累计) · 今日</span>
       </div>
     </div>`;
-  $('turnoverTime').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
 }
 
 function renderBreadth(b) {
