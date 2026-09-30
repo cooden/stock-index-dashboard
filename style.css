@@ -278,14 +278,16 @@ body.gray-mode #grayBtn { background: var(--panel-2); border-color: var(--txt-di
   .src-label { display: none; }
   .container { padding: 10px 12px; }
   .block { padding: 12px; margin-bottom: 12px; }
-  .idx-card { padding: 10px; }
-  .idx-name { font-size: 13px; }
-  .idx-price { font-size: 19px; }
-  .idx-change { font-size: 12px; }
-  .idx-meta { font-size: 9px; gap: 1px 8px; margin-top: 6px; }
+  .idx-card { padding: 12px; }
+  .idx-name { font-size: 15px; }
+  .idx-code { font-size: 11px; }
+  .idx-price { font-size: 24px; }
+  .idx-change { font-size: 14px; }
+  .idx-meta { display: none; }
   .bn .val { font-size: 18px; }
   .breadth-bar { height: 12px; }
   .refresh-badge { font-size: 11px; padding: 3px 10px; min-width: 70px; }
+  .to-val { font-size: 20px; }
 }
 
 /* ---------- 赞助模块 ---------- */

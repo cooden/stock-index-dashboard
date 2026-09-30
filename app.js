@@ -583,7 +583,7 @@ function fetchFundRanking() {
       window.rankData = null;
       const script = document.createElement('script');
       // sc=6yzf 按近6月收益率排序, st=desc 降序
-      script.src = 'http://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=6yzf&st=desc&pi=1&pn=100&dx=1&_t=' + Date.now();
+      script.src = 'https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=6yzf&st=desc&pi=1&pn=100&dx=1&_t=' + Date.now();
       script.onload = () => {
         setTimeout(() => {
           const datas = (window.rankData && window.rankData.datas) || [];
