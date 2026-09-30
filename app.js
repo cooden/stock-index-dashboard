@@ -570,49 +570,40 @@ if ($('sourceBar')) renderSourceBar();
 })();
 refresh();
 
-// ---------- 基金涨幅榜(近6月Top3, 去重A/C类) ----------
-function fundBaseName(name) {
-  return name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
+// ---------- 基金涨幅榜(近6月Top3, ETF去重同指数) ----------
+// ETF名称去重: 去掉基金公司后缀(如"疫苗ETF嘉实"→"疫苗ETF"), 同指数只保留涨幅最高的
+const FUND_COMPANIES = ['嘉实','国泰','富国','华夏','易方达','南方','广发','招商','博时','鹏华','汇添富','工银','建信','华泰柏瑞','银华','天弘','华安','平安','摩根','东财','民生加银','永赢','浦银','前海开源','景顺','泰康','中金','中信','国投瑞银','大成','长盛','银河','长城','长信','宝盈','信达澳亚','万家','金鹰','中海','申万菱信','华商','益民','东吴','诺安','兴业','天治','国海富兰克林','国联安','海富通','泰信','巨田','东方','国寿安保','英大','中加','西部利得','长安','富安达','德邦','汇丰晋信','上银','创金合信','红土创新','嘉合','中科沃土','北信瑞丰','金信','华宸未来','中原英石','新沃','中融','中邮','太平','中航','华宝','华富','华泰保兴','交银','金元顺安','景顺长城','九泰','凯石','诺德','平安大华','平安基金','浦银安盛','前海联合','乾道','融通','上投摩根','泰达宏利','新华','鑫元','信达澳银','兴业基金','兴证全球','兴全','圆信永丰','浙商','中金基金','中欧','中庚','中信建投','中信保诚','中银','中银国际','朱雀','华润元大','汇安','交银施罗德','新华基金','招商基金','朱雀基金'].sort((a,b)=>b.length-a.length);
+function etfBaseName(name) {
+  for (const c of FUND_COMPANIES) {
+    if (name.endsWith(c)) return name.slice(0, -c.length).trim();
+  }
+  return name;
 }
-function fundClass(name) {
-  return /C类?\s*$/i.test(name) ? 'C' : 'A';
-}
-function fetchFundRanking() {
-  return new Promise((resolve) => {
-    try {
-      window.rankData = null;
-      const script = document.createElement('script');
-      // sc=6yzf 按近6月收益率排序, st=desc 降序
-      script.src = 'https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=6yzf&st=desc&pi=1&pn=100&dx=1&_t=' + Date.now();
-      script.onload = () => {
-        setTimeout(() => {
-          const datas = (window.rankData && window.rankData.datas) || [];
-          const funds = datas.map(line => {
-            const p = line.split(',');
-            return {
-              code: p[0], name: p[1], date: p[3],
-              nav: parseFloat(p[4]), accumNav: parseFloat(p[5]),
-              dayPct: parseFloat(p[6]),
-              sixMonthPct: parseFloat(p[10]) // 近6月收益率
-            };
-          }).filter(f => Number.isFinite(f.sixMonthPct));
-          resolve(funds);
-        }, 200);
-      };
-      script.onerror = () => resolve([]);
-      document.head.appendChild(script);
-      setTimeout(() => resolve([]), 8000);
-    } catch { resolve([]); }
-  });
+async function fetchFundRanking() {
+  // 改用 push2.eastmoney.com (支持CORS, 无需Referer), fs=b:MK0021 为ETF基金, fid=f160 按近6月收益率排序
+  const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=200&po=1&np=1&fltt=2&invt=2&fid=f160&fs=b:MK0021&fields=f2,f3,f12,f14,f160&_t=${Date.now()}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const j = await r.json();
+    const diff = (j && j.data && j.data.diff) || [];
+    return diff.map(d => ({
+      code: d.f12,
+      name: d.f14,
+      price: d.f2,
+      dayPct: d.f3,
+      sixMonthPct: d.f160
+    })).filter(f => Number.isFinite(f.sixMonthPct));
+  } catch { return []; }
 }
 function renderFundRanking(funds) {
   const el = $('fundList');
   if (!el) return;
   if (!funds || !funds.length) { el.innerHTML = '<div class="loading">暂无数据</div>'; return; }
-  // 去重: 同基础名称(A/C类)只保留近6月涨幅最高的一个
+  // 去重: 同指数ETF(去掉公司后缀)只保留近6月涨幅最高的一个
   const dedup = new Map();
   for (const f of funds) {
-    const base = fundBaseName(f.name);
+    const base = etfBaseName(f.name);
     if (!dedup.has(base) || f.sixMonthPct > dedup.get(base).sixMonthPct) {
       dedup.set(base, f);
     }
@@ -622,14 +613,12 @@ function renderFundRanking(funds) {
 
   el.innerHTML = top.map((f, gi) => {
     const cls = f.sixMonthPct >= 0 ? 'up' : 'down';
-    const fc = fundClass(f.name);
-    const displayName = f.name.replace(/[（(]?[AC]类?[)）]?\s*$/i, '').replace(/发起$/, '').trim();
+    const displayName = etfBaseName(f.name);
     return `<div class="fund-group">
       <div class="fund-group-head"><span class="rank-idx">${gi + 1}</span>${displayName}<span class="rank-val ${cls}">${f.sixMonthPct >= 0 ? '+' : ''}${f.sixMonthPct.toFixed(2)}%</span></div>
       <div class="rank-item fund-item">
-        <span class="fund-cls ${fc === 'C' ? 'c-tag' : 'a-tag'}">${fc}</span>
         <span class="rank-name" title="${f.code}">${f.code}</span>
-        <span class="rank-val ${cls}">${f.sixMonthPct >= 0 ? '+' : ''}${f.sixMonthPct.toFixed(2)}%</span>
+        <span class="rank-val ${cls}">${f.dayPct !== null && f.dayPct !== undefined ? (f.dayPct >= 0 ? '+' : '') + f.dayPct.toFixed(2) + '%' : '--'}</span>
       </div>
     </div>`;
   }).join('') || '<div class="loading">暂无数据</div>';
