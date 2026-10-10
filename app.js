@@ -13,12 +13,12 @@ function pad2(n) { return String(n).padStart(2, '0'); }
 
 // 6大指数(中证全指末尾)
 const IDX_DEFS = [
-  { code: 'sh000001', name: '上证指数', region: '中国大陆', bare: '000001', market: 'CN' },
-  { code: 'sz399006', name: '创业板指', region: '中国大陆', bare: '399006', market: 'CN' },
-  { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688', market: 'CN' },
-  { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225',   market: 'JP' },
-  { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11',   market: 'KR' },
-  { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN' }
+  { code: 'sh000001', name: '上证指数', region: '中国大陆', bare: '000001', market: 'CN', secid: '1.000001' },
+  { code: 'sz399006', name: '创业板指', region: '中国大陆', bare: '399006', market: 'CN', secid: '0.399006' },
+  { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688', market: 'CN', secid: '1.000688' },
+  { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225',   market: 'JP', secid: '100.N225' },
+  { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11',   market: 'KR', secid: '100.KS11' },
+  { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN', secid: '1.000985' }
 ];
 const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985';
 
@@ -386,10 +386,127 @@ function renderIndices(indices) {
           ${idx.high !== null ? `<span>高 <b>${fmt(idx.high,2)}</b></span>`:''}
           ${idx.low !== null ? `<span>低 <b>${fmt(idx.low,2)}</b></span>`:''}
         </div>
+        <div class="idx-chart-wrap"><canvas class="idx-chart" data-code="${idx.code}"></canvas></div>
         ${unavail}
       </div>`;
   }).join('');
+  redrawAllCharts();
 }
+
+// ---------- 6大指数分时图 ----------
+const TREND_HOSTS = [
+  'https://push2.eastmoney.com/api/qt/stock/trends2/get',
+  'https://push2his.eastmoney.com/api/qt/stock/trends2/get',
+  'https://82.push2.eastmoney.com/api/qt/stock/trends2/get'
+];
+const CHART_TTL = 30000; // 分时数据30秒刷新一次
+const trendCache = {};   // code -> { preClose, points, ts }
+
+function hexA(hex, a) {
+  const m = (hex || '').replace('#', '');
+  if (m.length !== 6) return `rgba(234,57,67,${a})`;
+  const r = parseInt(m.substr(0, 2), 16), g = parseInt(m.substr(2, 2), 16), b = parseInt(m.substr(4, 2), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+async function fetchTrend(def) {
+  const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f53&iscr=0&ndays=1&_t=${Date.now()}`;
+  let lastErr;
+  for (const host of TREND_HOSTS) {
+    try {
+      const j = await fetchWithTimeout(`${host}?${q}`, 12000);
+      const d = j && j.data;
+      if (d && d.trends && d.trends.length) {
+        const points = d.trends.map(line => parseFloat(line.split(',')[1])).filter(v => Number.isFinite(v));
+        if (points.length) {
+          trendCache[def.code] = { preClose: num(d.preClose) ?? points[0], points, ts: Date.now() };
+          return;
+        }
+      }
+      lastErr = new Error('trends empty');
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('trend fail');
+}
+
+function drawChart(canvas, data) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const { preClose, points } = data;
+  if (!points.length || !Number.isFinite(preClose)) return;
+
+  let min = Math.min(preClose, ...points);
+  let max = Math.max(preClose, ...points);
+  const pad = (max - min) * 0.15 || Math.abs(preClose) * 0.002;
+  min -= pad; max += pad;
+  const n = points.length;
+  const x = i => n === 1 ? 0 : (i / (n - 1)) * w;
+  const y = p => h - ((p - min) / (max - min)) * h;
+
+  // 昨收基准虚线
+  const yBase = y(preClose);
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = 'rgba(139,148,158,.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, yBase); ctx.lineTo(w, yBase); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const last = points[n - 1];
+  const styles = getComputedStyle(document.body);
+  const upColor = (styles.getPropertyValue('--up').trim()) || '#ea3943';
+  const downColor = (styles.getPropertyValue('--down').trim()) || '#16c784';
+  const color = last >= preClose ? upColor : downColor;
+
+  // 渐变填充
+  ctx.beginPath();
+  ctx.moveTo(0, y(points[0]));
+  points.forEach((p, i) => ctx.lineTo(x(i), y(p)));
+  ctx.lineTo(x(n - 1), h); ctx.lineTo(0, h); ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, hexA(color, 0.22));
+  grad.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 价格线
+  ctx.beginPath();
+  ctx.moveTo(0, y(points[0]));
+  points.forEach((p, i) => ctx.lineTo(x(i), y(p)));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.4;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // 末端点
+  ctx.beginPath();
+  ctx.arc(x(n - 1), y(last), 2.2, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function redrawAllCharts() {
+  document.querySelectorAll('canvas.idx-chart').forEach(cv => {
+    const d = trendCache[cv.dataset.code];
+    if (d) drawChart(cv, d);
+  });
+}
+
+async function refreshAllCharts() {
+  for (const def of IDX_DEFS) {
+    try { await fetchTrend(def); } catch {}
+    redrawAllCharts();
+    await new Promise(r => setTimeout(r, 120)); // 顺序请求,避免并发限流
+  }
+}
+let _chartTimer = setInterval(refreshAllCharts, CHART_TTL);
+let _resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(_resizeTimer); _resizeTimer = setTimeout(redrawAllCharts, 200); });
 
 function fmtAmount(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return '--';
@@ -569,6 +686,8 @@ if ($('sourceBar')) renderSourceBar();
   }
 })();
 refresh();
+// 分时图: 卡片首次渲染后立即拉取一次(之后每30秒自动刷新)
+setTimeout(refreshAllCharts, 100);
 
 // ---------- 基金涨幅榜(近6月Top3, ETF去重同指数) ----------
 // ETF名称去重: 去掉基金公司后缀(如"疫苗ETF嘉实"→"疫苗ETF"), 同指数只保留涨幅最高的
