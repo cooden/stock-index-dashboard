@@ -400,7 +400,7 @@ const TREND_HOSTS = [
   'https://82.push2.eastmoney.com/api/qt/stock/trends2/get'
 ];
 const CHART_TTL = 30000; // 分时数据30秒刷新一次
-const trendCache = {};   // code -> { preClose, points, ts }
+const trendCache = {};   // code -> { days: [{ date, preClose, points }], ts }
 
 function hexA(hex, a) {
   const m = (hex || '').replace('#', '');
@@ -410,18 +410,33 @@ function hexA(hex, a) {
 }
 
 async function fetchTrend(def) {
-  const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f53&iscr=0&ndays=1&_t=${Date.now()}`;
+  const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f53&iscr=0&ndays=2&_t=${Date.now()}`;
   let lastErr;
   for (const host of TREND_HOSTS) {
     try {
       const j = await fetchWithTimeout(`${host}?${q}`, 12000);
       const d = j && j.data;
       if (d && d.trends && d.trends.length) {
-        const points = d.trends.map(line => parseFloat(line.split(',')[1])).filter(v => Number.isFinite(v));
-        if (points.length) {
-          trendCache[def.code] = { preClose: num(d.preClose) ?? points[0], points, ts: Date.now() };
-          return;
-        }
+        // 按日期分组
+        const byDate = {};
+        d.trends.forEach(line => {
+          const [ts, price] = line.split(',');
+          const date = ts.substr(0, 10);
+          const p = parseFloat(price);
+          if (!Number.isFinite(p)) return;
+          (byDate[date] = byDate[date] || []).push(p);
+        });
+        const dates = Object.keys(byDate).sort();
+        if (!dates.length) { lastErr = new Error('trends empty'); continue; }
+        const days = dates.map(date => ({
+          date,
+          preClose: num(d.preClose) ?? byDate[date][0],
+          points: byDate[date]
+        }));
+        // 首日preClose用接口给的, 次日preClose用首日收盘价(更直观)
+        if (days.length >= 2) days[1].preClose = days[0].points[days[0].points.length - 1];
+        trendCache[def.code] = { days, ts: Date.now() };
+        return;
       }
       lastErr = new Error('trends empty');
     } catch (e) { lastErr = e; }
@@ -438,56 +453,102 @@ function drawChart(canvas, data) {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  const { preClose, points } = data;
-  if (!points.length || !Number.isFinite(preClose)) return;
+  const { days } = data;
+  if (!days || !days.length) return;
 
-  let min = Math.min(preClose, ...points);
-  let max = Math.max(preClose, ...points);
-  const pad = (max - min) * 0.15 || Math.abs(preClose) * 0.002;
-  min -= pad; max += pad;
-  const n = points.length;
-  const x = i => n === 1 ? 0 : (i / (n - 1)) * w;
-  const y = p => h - ((p - min) / (max - min)) * h;
-
-  // 昨收基准虚线
-  const yBase = y(preClose);
-  ctx.setLineDash([3, 3]);
-  ctx.strokeStyle = 'rgba(139,148,158,.4)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, yBase); ctx.lineTo(w, yBase); ctx.stroke();
-  ctx.setLineDash([]);
-
-  const last = points[n - 1];
   const styles = getComputedStyle(document.body);
   const upColor = (styles.getPropertyValue('--up').trim()) || '#ea3943';
   const downColor = (styles.getPropertyValue('--down').trim()) || '#16c784';
-  const color = last >= preClose ? upColor : downColor;
+  const dimColor = 'rgba(139,148,158,.4)';
 
-  // 渐变填充
-  ctx.beginPath();
-  ctx.moveTo(0, y(points[0]));
-  points.forEach((p, i) => ctx.lineTo(x(i), y(p)));
-  ctx.lineTo(x(n - 1), h); ctx.lineTo(0, h); ctx.closePath();
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, hexA(color, 0.22));
-  grad.addColorStop(1, hexA(color, 0));
-  ctx.fillStyle = grad;
-  ctx.fill();
+  // 合并两天的数据, 记录分界点
+  const all = [];  // { price, dayIdx, withinIdx }
+  const dayBreaks = []; // 累积点数, 用于画分隔线
+  days.forEach((d, di) => {
+    d.points.forEach((p, pi) => {
+      all.push({ price: p, dayIdx: di });
+    });
+    if (di < days.length - 1) dayBreaks.push(all.length);
+  });
+  const n = all.length;
+  if (!n) return;
 
-  // 价格线
-  ctx.beginPath();
-  ctx.moveTo(0, y(points[0]));
-  points.forEach((p, i) => ctx.lineTo(x(i), y(p)));
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.4;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
+  // Y轴范围(包含所有preClose和所有价格)
+  let min = Math.min(...days.map(d => d.preClose), ...all.map(p => p.price));
+  let max = Math.max(...days.map(d => d.preClose), ...all.map(p => p.price));
+  const pad = (max - min) * 0.15 || Math.abs(days[days.length - 1].preClose) * 0.002;
+  min -= pad; max += pad;
+  const x = i => n === 1 ? 0 : (i / (n - 1)) * w;
+  const y = p => h - ((p - min) / (max - min)) * h;
 
-  // 末端点
-  ctx.beginPath();
-  ctx.arc(x(n - 1), y(last), 2.2, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
+  // 画每个交易日的昨收基准线(虚线)
+  days.forEach(d => {
+    const yBase = y(d.preClose);
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = dimColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, yBase); ctx.lineTo(w, yBase); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // 日期分隔竖线(多日时)
+  dayBreaks.forEach(brk => {
+    const xPos = x(brk - 1);
+    ctx.strokeStyle = 'rgba(139,148,158,.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(xPos, 0); ctx.lineTo(xPos, h); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // 逐日线 + 渐变填充
+  days.forEach((d, di) => {
+    const startIdx = di === 0 ? 0 : dayBreaks[di - 1];
+    const endIdx = di === days.length - 1 ? n : dayBreaks[di];
+    const seg = all.slice(startIdx, endIdx);
+    if (!seg.length) return;
+    const last = seg[seg.length - 1].price;
+    const color = last >= d.preClose ? upColor : downColor;
+
+    // 渐变填充
+    ctx.beginPath();
+    ctx.moveTo(x(startIdx), y(seg[0].price));
+    seg.forEach((pt, i) => ctx.lineTo(x(startIdx + i), y(pt.price)));
+    ctx.lineTo(x(endIdx - 1), h); ctx.lineTo(x(startIdx), h); ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, hexA(color, 0.22));
+    grad.addColorStop(1, hexA(color, 0));
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // 价格线
+    ctx.beginPath();
+    ctx.moveTo(x(startIdx), y(seg[0].price));
+    seg.forEach((pt, i) => ctx.lineTo(x(startIdx + i), y(pt.price)));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // 末端点(只在最后一天画)
+    if (di === days.length - 1) {
+      ctx.beginPath();
+      ctx.arc(x(endIdx - 1), y(last), 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  });
+
+  // 日期标注
+  days.forEach((d, di) => {
+    const startIdx = di === 0 ? 0 : dayBreaks[di - 1];
+    const cx = di === 0 ? 4 : x(startIdx) + 4;
+    ctx.fillStyle = 'rgba(139,148,158,.7)';
+    ctx.font = '9px -apple-system,"Segoe UI",sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(d.date.substr(5), cx, 2);
+  });
 }
 
 function redrawAllCharts() {
