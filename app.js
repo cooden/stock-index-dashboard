@@ -511,17 +511,15 @@ async function fetchTrend(def) {
       ohlc = ohlcCache[def.code] || null;
     }
     if (ohlc && Number.isFinite(ohlc.open)) {
-      // 4 点时间位置: open(9:30→0), high(10:30→0.25), low(14:00→0.75), close(15:00→1.0)
+      // 简化版: 昨天开盘→收盘 2点斜线
       prev = {
         date: ohlc.date,
         preClose: ohlc.open,
         points: [
-          { frac: 0.0,  price: ohlc.open },
-          { frac: 0.25, price: ohlc.high },
-          { frac: 0.75, price: ohlc.low },
-          { frac: 1.0,  price: ohlc.close }
+          { frac: 0.0, price: ohlc.open },
+          { frac: 1.0, price: ohlc.close }
         ],
-        rawPrices: [ohlc.open, ohlc.high, ohlc.low, ohlc.close],
+        rawPrices: [ohlc.open, ohlc.close],
         isSimplified: true
       };
       const ohlcCache = lsGet(YESTERDAY_OHLC_LS);
