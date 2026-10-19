@@ -395,11 +395,12 @@ function renderIndices(indices) {
 
 // ---------- 6大指数分时图 ----------
 const TREND_HOSTS = [
+  'https://82.push2.eastmoney.com/api/qt/stock/trends2/get',
   'https://push2.eastmoney.com/api/qt/stock/trends2/get',
-  'https://push2his.eastmoney.com/api/qt/stock/trends2/get',
-  'https://82.push2.eastmoney.com/api/qt/stock/trends2/get'
+  'https://push2his.eastmoney.com/api/qt/stock/trends2/get'
 ];
 const KLINE_HOSTS = [
+  'https://82.push2.eastmoney.com/api/qt/stock/kline/get',
   'https://push2his.eastmoney.com/api/qt/stock/kline/get',
   'https://push2.eastmoney.com/api/qt/stock/kline/get'
 ];
@@ -418,7 +419,19 @@ function hexA(hex, a) {
 function lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
 
-// 从 trends2 拉某指数当天完整分时
+// 交易时间映射: 9:30-11:30 (120min) + 13:00-15:00 (120min) = 240min
+// 返回该时间在全天的 [0,1] 偏移, 非交易时段返回 null
+function tradeFrac(hhmm) {
+  const h = parseInt(hhmm.substr(0, 2), 10), m = parseInt(hhmm.substr(3, 2), 10);
+  const mins = h * 60 + m;
+  // 上午 9:30 (570) - 11:30 (690)
+  if (mins >= 570 && mins <= 690) return (mins - 570) / 240;
+  // 下午 13:00 (780) - 15:00 (900)
+  if (mins >= 780 && mins <= 900) return (mins - 570 - 90) / 240; // 减90分钟午休
+  return null;
+}
+
+// 从 trends2 拉当天完整分时, 存 {frac, price} 时间偏移
 async function fetchTodayTrend(def) {
   const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f53&iscr=0&ndays=1&_t=${Date.now()}`;
   for (const host of TREND_HOSTS) {
@@ -426,9 +439,22 @@ async function fetchTodayTrend(def) {
       const j = await fetchWithTimeout(`${host}?${q}`, 12000);
       const d = j && j.data;
       if (d && d.trends && d.trends.length) {
-        const p = d.trends.map(line => parseFloat(line.split(',')[1])).filter(v => Number.isFinite(v));
-        if (p.length) {
-          return { date: d.trends[0].substr(0, 10), preClose: num(d.preClose) ?? p[0], points: p };
+        const pts = [];
+        for (const line of d.trends) {
+          const [ts, price] = line.split(',');
+          const p = parseFloat(price);
+          if (!Number.isFinite(p)) continue;
+          const hhmm = ts.substr(11, 5);
+          const frac = tradeFrac(hhmm);
+          if (frac !== null) pts.push({ frac, price: p });
+        }
+        if (pts.length) {
+          return {
+            date: d.trends[0].substr(0, 10),
+            preClose: num(d.preClose) ?? pts[0].price,
+            points: pts,          // [{frac, price}]
+            rawPrices: pts.map(x => x.price) // 方便取最后一个
+          };
         }
       }
     } catch {}
@@ -436,15 +462,15 @@ async function fetchTodayTrend(def) {
   return null;
 }
 
-// 拉日线K线取前一交易日 OHLC
+// 拉日线 OHLC: 东方财富 kline (多 host 轮询)
 async function fetchPrevDayOHLC(def) {
-  const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&lmt=2`;
+  const today = new Date().toISOString().substr(0, 10);
   for (const host of KLINE_HOSTS) {
     try {
-      const j = await fetchWithTimeout(`${host}?${q}`, 10000);
+      const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&lmt=3`;
+      const j = await fetchWithTimeout(`${host}?${q}`, 8000);
       const d = j && j.data;
       if (d && d.klines && d.klines.length >= 1) {
-        const today = new Date().toISOString().substr(0, 10);
         let prevLine = null;
         for (let i = d.klines.length - 1; i >= 0; i--) {
           if (!d.klines[i].startsWith(today)) { prevLine = d.klines[i]; break; }
@@ -466,24 +492,36 @@ async function fetchTrend(def) {
   // 1. 拉今天完整分时
   let today = await fetchTodayTrend(def);
 
-  // 2. 昨天: 优先 localStorage 缓存的完整分时
+  // 2. 昨天: 优先 localStorage 缓存的完整分时, 兜底日线 OHLC 4 点
   let prev = null;
   const fullCache = lsGet(YESTERDAY_FULL_LS);
   const fc = fullCache[def.code];
   if (fc && fc.points && fc.points.length > 50) {
-    prev = { date: fc.date, preClose: fc.preClose, points: fc.points, isSimplified: false };
+    prev = {
+      date: fc.date,
+      preClose: fc.preClose,
+      points: fc.points,           // 已是 [{frac, price}]
+      rawPrices: fc.points.map(x => x.price),
+      isSimplified: false
+    };
   } else {
-    // 兜底: 日线 OHLC 4 点折线
     let ohlc = await fetchPrevDayOHLC(def);
     if (!ohlc || !Number.isFinite(ohlc.open)) {
       const ohlcCache = lsGet(YESTERDAY_OHLC_LS);
       ohlc = ohlcCache[def.code] || null;
     }
     if (ohlc && Number.isFinite(ohlc.open)) {
+      // 4 点时间位置: open(9:30→0), high(10:30→0.25), low(14:00→0.75), close(15:00→1.0)
       prev = {
         date: ohlc.date,
         preClose: ohlc.open,
-        points: [ohlc.open, ohlc.high, ohlc.low, ohlc.close],
+        points: [
+          { frac: 0.0,  price: ohlc.open },
+          { frac: 0.25, price: ohlc.high },
+          { frac: 0.75, price: ohlc.low },
+          { frac: 1.0,  price: ohlc.close }
+        ],
+        rawPrices: [ohlc.open, ohlc.high, ohlc.low, ohlc.close],
         isSimplified: true
       };
       const ohlcCache = lsGet(YESTERDAY_OHLC_LS);
@@ -492,7 +530,7 @@ async function fetchTrend(def) {
     }
   }
 
-  // 3. 缓存今天数据(收盘后点数够多就存为明天的昨天)
+  // 3. 缓存今天数据(收盘后≥200点就存为明天的昨天)
   if (today && today.points.length >= 200) {
     const fc = lsGet(YESTERDAY_FULL_LS);
     fc[def.code] = { date: today.date, preClose: today.preClose, points: today.points, ts: Date.now() };
@@ -514,9 +552,7 @@ function drawChart(canvas, data) {
   ctx.clearRect(0, 0, w, h);
 
   const { prev, today } = data;
-  // 至少需要一边有数据
-  const left = prev;
-  const right = today;
+  const left = prev, right = today;
   if (!left && !right) return;
 
   const styles = getComputedStyle(document.body);
@@ -524,45 +560,62 @@ function drawChart(canvas, data) {
   const downColor = (styles.getPropertyValue('--down').trim()) || '#16c784';
   const dimColor = 'rgba(139,148,158,.4)';
 
-  // 左右各占一半宽度
   const halfW = w / 2;
-  // 画左右两个子图(各独立Y轴范围)
+
+  // 时间轴刻度: 9:30 / 10:30 / 11:30-13:00午休 gap(中间0.5-0.625跳过) / 14:00 / 15:00
+  // 但为了简洁, 只在 0.5 (午休起点) 和 0.625 (午休终点) 之间留白即可
+  // 实际画 X 时, 用完整 0~1 frac 线性映射, 中间 0.5~0.625 午休区不画任何线
+
   const drawSide = (side, xOffset, width, label) => {
     if (!side) {
-      // 无数据画个提示
       ctx.fillStyle = 'rgba(139,148,158,.5)';
       ctx.font = '9px -apple-system,"Segoe UI",sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('暂无数据', xOffset + width / 2, h / 2);
       return;
     }
     const { preClose, points, isSimplified } = side;
-    let min = Math.min(preClose, ...points);
-    let max = Math.max(preClose, ...points);
+    const prices = points.map(p => p.price);
+    let min = Math.min(preClose, ...prices);
+    let max = Math.max(preClose, ...prices);
     const pad = (max - min) * 0.15 || Math.abs(preClose) * 0.002;
     min -= pad; max += pad;
-    const n = points.length;
-    const x = i => n === 1 ? xOffset + width / 2 : xOffset + (i / (n - 1)) * width;
-    const y = p => h - ((p - min) / (max - min)) * h;
+    const yFn = p => h - ((p - min) / (max - min)) * h;
+    const xFn = frac => xOffset + frac * width;
 
-    // preClose 基准线
-    const yBase = y(preClose);
+    // 画 preClose 基准线
+    const yBase = yFn(preClose);
     ctx.setLineDash([3, 3]);
     ctx.strokeStyle = dimColor;
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(xOffset, yBase); ctx.lineTo(xOffset + width, yBase); ctx.stroke();
     ctx.setLineDash([]);
 
-    const last = points[n - 1];
+    // 画午休区空白背景 (0.5 ~ 0.625)
+    // 不需要额外画, 因为没点就空着, 但可以画个浅色分割
+    ctx.fillStyle = 'rgba(139,148,158,.06)';
+    ctx.fillRect(xFn(0.5), 0, width * 0.125, h);
+
+    const last = prices[prices.length - 1];
     const color = last >= preClose ? upColor : downColor;
 
     // 渐变填充(简化日不画)
-    if (!isSimplified) {
+    if (!isSimplified && points.length) {
       ctx.beginPath();
-      ctx.moveTo(x(0), y(points[0]));
-      points.forEach((p, i) => ctx.lineTo(x(i), y(p)));
-      ctx.lineTo(xOffset + width, h); ctx.lineTo(xOffset, h); ctx.closePath();
+      ctx.moveTo(xFn(points[0].frac), yFn(points[0].price));
+      for (let i = 1; i < points.length; i++) {
+        // 如果 frac 跳过大 (>0.05) 说明是午休, 跳过连线
+        if (points[i].frac - points[i - 1].frac > 0.1) {
+          ctx.lineTo(xFn(0.5), yFn(points[i - 1].price));
+          ctx.moveTo(xFn(0.625), yFn(points[i].price));
+        } else {
+          ctx.lineTo(xFn(points[i].frac), yFn(points[i].price));
+        }
+      }
+      // 闭合到底部
+      ctx.lineTo(xFn(Math.min(points[points.length - 1].frac, 1)), h);
+      ctx.lineTo(xOffset, h);
+      ctx.closePath();
       const grad = ctx.createLinearGradient(0, 0, 0, h);
       grad.addColorStop(0, hexA(color, 0.22));
       grad.addColorStop(1, hexA(color, 0));
@@ -570,10 +623,23 @@ function drawChart(canvas, data) {
       ctx.fill();
     }
 
-    // 价格线
+    // 价格线(处理午休断裂)
     ctx.beginPath();
-    ctx.moveTo(x(0), y(points[0]));
-    points.forEach((p, i) => ctx.lineTo(x(i), y(p)));
+    let started = false;
+    for (let i = 0; i < points.length; i++) {
+      const fx = xFn(points[i].frac), fy = yFn(points[i].price);
+      if (!started) { ctx.moveTo(fx, fy); started = true; }
+      else {
+        if (points[i].frac - points[i - 1].frac > 0.1) {
+          // 午休 gap, 不连
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(fx, fy);
+        } else {
+          ctx.lineTo(fx, fy);
+        }
+      }
+    }
     ctx.strokeStyle = color;
     ctx.lineWidth = isSimplified ? 1 : 1.4;
     ctx.lineJoin = 'round';
@@ -583,25 +649,32 @@ function drawChart(canvas, data) {
 
     // 数据点
     if (isSimplified) {
-      points.forEach((p, i) => {
+      points.forEach(pt => {
         ctx.beginPath();
-        ctx.arc(x(i), y(p), 2, 0, Math.PI * 2);
+        ctx.arc(xFn(pt.frac), yFn(pt.price), 2, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
       });
-    } else {
-      // 末端点
+    } else if (points.length) {
       ctx.beginPath();
-      ctx.arc(x(n - 1), y(last), 2.2, 0, Math.PI * 2);
+      ctx.arc(xFn(points[points.length - 1].frac), yFn(last), 2.2, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
     }
 
+    // 时间刻度线 (轻微)
+    ctx.strokeStyle = 'rgba(139,148,158,.25)';
+    ctx.lineWidth = 0.5;
+    [0.25, 0.5, 0.625, 0.75].forEach(f => {
+      ctx.beginPath();
+      ctx.moveTo(xFn(f), 0); ctx.lineTo(xFn(f), h);
+      ctx.stroke();
+    });
+
     // 日期标注
     ctx.fillStyle = 'rgba(139,148,158,.7)';
     ctx.font = '9px -apple-system,"Segoe UI",sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText(side.date.substr(5), xOffset + 3, 2);
     if (label) {
       ctx.textAlign = 'right';
@@ -612,9 +685,9 @@ function drawChart(canvas, data) {
   // 左边: 昨天
   drawSide(left, 0, halfW, left ? '昨' : null);
   // 中间竖线
-  ctx.strokeStyle = 'rgba(139,148,158,.5)';
+  ctx.strokeStyle = 'rgba(139,148,158,.6)';
   ctx.lineWidth = 1;
-  ctx.setLineDash([2, 3]);
+  ctx.setLineDash([3, 2]);
   ctx.beginPath(); ctx.moveTo(halfW, 0); ctx.lineTo(halfW, h); ctx.stroke();
   ctx.setLineDash([]);
   // 右边: 今天
