@@ -462,9 +462,33 @@ async function fetchTodayTrend(def) {
   return null;
 }
 
-// 拉日线 OHLC: 东方财富 kline (多 host 轮询)
+// 拉日线 OHLC: 腾讯优先(A股稳定), 海外走东方财富 kline
+// 腾讯 fqkline 格式: [[date, open, close, high, low, vol], ...]
 async function fetchPrevDayOHLC(def) {
   const today = new Date().toISOString().substr(0, 10);
+  // 1) 腾讯日线 (A股 4 个稳定可用, 海外 N225/KS11 不支持)
+  if (def.market === 'CN') {
+    try {
+      const j = await fetchWithTimeout(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${def.code},day,,,3,qfq`, 8000);
+      const d = j && j.data;
+      const node = d && d[def.code];
+      const days = node && node.day;
+      if (Array.isArray(days) && days.length) {
+        // 取最后一根非今天的
+        let row = null;
+        for (let i = days.length - 1; i >= 0; i--) {
+          if (days[i][0] && !days[i][0].startsWith(today)) { row = days[i]; break; }
+        }
+        if (!row) row = days[days.length - 1];
+        const open = parseFloat(row[1]), close = parseFloat(row[2]);
+        const high = parseFloat(row[3]), low = parseFloat(row[4]);
+        if ([open, close, high, low].every(v => Number.isFinite(v))) {
+          return { date: row[0], open, close, high, low };
+        }
+      }
+    } catch {}
+  }
+  // 2) 东方财富 kline (海外唯一选择, 偶尔被封)
   for (const host of KLINE_HOSTS) {
     try {
       const q = `secid=${def.secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&lmt=3`;
