@@ -516,15 +516,17 @@ async function fetchTrend(def) {
   // 1. 拉今天完整分时
   let today = await fetchTodayTrend(def);
 
-  // 2. 昨天: 优先 localStorage 缓存的完整分时, 兜底日线 OHLC 4 点
+  // 2. 昨天: 优先 localStorage 缓存(日期必须早于今天), 兜底日线 OHLC
   let prev = null;
   const fullCache = lsGet(YESTERDAY_FULL_LS);
   const fc = fullCache[def.code];
-  if (fc && fc.points && fc.points.length > 50) {
+  // 缓存日期必须 < 今天日期, 否则是盘中污染
+  const todayDate = today ? today.date : new Date().toISOString().substr(0, 10);
+  if (fc && fc.points && fc.points.length > 50 && fc.date < todayDate) {
     prev = {
       date: fc.date,
       preClose: fc.preClose,
-      points: fc.points,           // 已是 [{frac, price}]
+      points: fc.points,
       rawPrices: fc.points.map(x => x.price),
       isSimplified: false
     };
@@ -535,7 +537,6 @@ async function fetchTrend(def) {
       ohlc = ohlcCache[def.code] || null;
     }
     if (ohlc && Number.isFinite(ohlc.open)) {
-      // 简化版: 昨天开盘→收盘 2点斜线
       prev = {
         date: ohlc.date,
         preClose: ohlc.open,
@@ -552,8 +553,9 @@ async function fetchTrend(def) {
     }
   }
 
-  // 3. 缓存今天数据(收盘后≥200点就存为明天的昨天)
-  if (today && today.points.length >= 200) {
+  // 3. 缓存今天数据: 必须是完整收盘(点数≥200 且当前时间≥15:00) 才存
+  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+  if (today && today.points.length >= 200 && nowMins >= 15 * 60) {
     const fc = lsGet(YESTERDAY_FULL_LS);
     fc[def.code] = { date: today.date, preClose: today.preClose, points: today.points, ts: Date.now() };
     lsSet(YESTERDAY_FULL_LS, fc);
@@ -645,15 +647,14 @@ function drawChart(canvas, data) {
       ctx.fill();
     }
 
-    // 价格线(处理午休断裂)
+    // 价格线(简化日不处理午休断裂, 因为只有2点是线性映射)
     ctx.beginPath();
     let started = false;
     for (let i = 0; i < points.length; i++) {
       const fx = xFn(points[i].frac), fy = yFn(points[i].price);
       if (!started) { ctx.moveTo(fx, fy); started = true; }
       else {
-        if (points[i].frac - points[i - 1].frac > 0.1) {
-          // 午休 gap, 不连
+        if (!isSimplified && points[i].frac - points[i - 1].frac > 0.1) {
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(fx, fy);
