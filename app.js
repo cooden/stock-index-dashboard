@@ -406,8 +406,9 @@ const KLINE_HOSTS = [
 ];
 const CHART_TTL = 30000;
 const trendCache = {};              // code -> { today, prev, ts }
-const YESTERDAY_FULL_LS = 'idx_yesterday_full_v1'; // 完整分时缓存
-const YESTERDAY_OHLC_LS = 'idx_yesterday_ohlc_v1'; // OHLC 缓存(兜底)
+const YESTERDAY_FULL_LS = 'idx_yesterday_full_v1'; // 昨天完整分时缓存
+const YESTERDAY_OHLC_LS = 'idx_yesterday_ohlc_v1'; // 昨天OHLC缓存(兜底)
+const TODAY_FULL_LS = 'idx_today_full_v1';          // 今天分时快照(接口挂时兜底)
 
 function hexA(hex, a) {
   const m = (hex || '').replace('#', '');
@@ -524,16 +525,29 @@ async function fetchPrevDayOHLC(def) {
 }
 
 async function fetchTrend(def) {
-  // 1. 拉今天完整分时
+  const todayStr = new Date().toISOString().substr(0, 10);
+
+  // 1. 拉今天完整分时, 失败则从 localStorage 兜底
   let today = await fetchTodayTrend(def);
+  if (!today) {
+    const tc = lsGet(TODAY_FULL_LS);
+    const snap = tc[def.code];
+    // 快照日期必须是今天, 且点数够
+    if (snap && snap.date === todayStr && snap.points && snap.points.length > 30) {
+      today = { date: snap.date, preClose: snap.preClose, points: snap.points, rawPrices: snap.points.map(x => x.price) };
+    }
+  } else {
+    // fetch 成功就存 localStorage 快照
+    const tc = lsGet(TODAY_FULL_LS);
+    tc[def.code] = { date: today.date, preClose: today.preClose, points: today.points, ts: Date.now() };
+    lsSet(TODAY_FULL_LS, tc);
+  }
 
   // 2. 昨天: 优先 localStorage 缓存(日期必须早于今天), 兜底日线 OHLC
   let prev = null;
   const fullCache = lsGet(YESTERDAY_FULL_LS);
   const fc = fullCache[def.code];
-  // 缓存日期必须 < 今天日期, 否则是盘中污染
-  const todayDate = today ? today.date : new Date().toISOString().substr(0, 10);
-  if (fc && fc.points && fc.points.length > 50 && fc.date < todayDate) {
+  if (fc && fc.points && fc.points.length > 50 && fc.date < todayStr) {
     prev = {
       date: fc.date,
       preClose: fc.preClose,
@@ -574,7 +588,13 @@ async function fetchTrend(def) {
   }
 
   if (!today && !prev) throw new Error('all fetch fail');
-  trendCache[def.code] = { today, prev, ts: Date.now() };
+  // 保留旧缓存: fetch 失败的字段沿用上一轮成功值
+  const old = trendCache[def.code];
+  trendCache[def.code] = {
+    today: today || (old && old.today) || null,
+    prev: prev || (old && old.prev) || null,
+    ts: today || prev ? Date.now() : (old && old.ts) || Date.now()
+  };
 }
 
 function drawChart(canvas, data) {
