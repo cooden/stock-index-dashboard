@@ -667,8 +667,8 @@ function drawChart(canvas, data) {
       ctx.moveTo(xFn(points[0].frac), h);
       ctx.lineTo(xFn(points[0].frac), yFn(points[0].price));
       for (let i = 1; i < points.length; i++) {
-        // 午休 gap: 上一段收到底部, 午休段走底部, 下一段从底部升起 (避免 moveTo 跳断导致一半浅色)
-        if (breakFrac !== null && points[i - 1].frac < breakFrac && points[i].frac >= breakFrac) {
+        // 午休 gap: 上一段收到底部, 午休段走底部, 下一段从底部升起
+        if (breakFrac !== null && points[i - 1].frac <= breakFrac && points[i].frac > breakFrac) {
           ctx.lineTo(xFn(breakFrac), yFn(points[i - 1].price));
           ctx.lineTo(xFn(breakFrac), h);
           ctx.lineTo(xFn(breakFrac), yFn(points[i].price));
@@ -676,12 +676,12 @@ function drawChart(canvas, data) {
           ctx.lineTo(xFn(points[i].frac), yFn(points[i].price));
         }
       }
-      // 闭合到右下
       ctx.lineTo(xFn(points[points.length - 1].frac), h);
       ctx.closePath();
+      // 渐变但底部保留最低透明度, 避免价格偏低时填充过浅看起来"一半浅色"
       const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, hexA(color, 0.22));
-      grad.addColorStop(1, hexA(color, 0));
+      grad.addColorStop(0, hexA(color, 0.28));
+      grad.addColorStop(1, hexA(color, 0.1));
       ctx.fillStyle = grad;
       ctx.fill();
     }
@@ -693,7 +693,7 @@ function drawChart(canvas, data) {
       const fx = xFn(points[i].frac), fy = yFn(points[i].price);
       if (!started) { ctx.moveTo(fx, fy); started = true; }
       else {
-        if (!isSimplified && breakFrac !== null && points[i - 1].frac < breakFrac && points[i].frac >= breakFrac) {
+        if (!isSimplified && breakFrac !== null && points[i - 1].frac <= breakFrac && points[i].frac > breakFrac) {
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(fx, fy);
