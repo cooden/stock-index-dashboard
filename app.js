@@ -661,22 +661,23 @@ function drawChart(canvas, data) {
     const last = prices[prices.length - 1];
     const color = last >= preClose ? upColor : downColor;
 
-    // 渐变填充(简化日不画)
+    // 渐变填充(简化日不画): 午休段沿底部走, 保证上下午各自填充但中间留白
     if (!isSimplified && points.length) {
       ctx.beginPath();
-      ctx.moveTo(xFn(points[0].frac), yFn(points[0].price));
+      ctx.moveTo(xFn(points[0].frac), h);
+      ctx.lineTo(xFn(points[0].frac), yFn(points[0].price));
       for (let i = 1; i < points.length; i++) {
-        // 如果 frac 跳过大 (>0.05) 说明是午休, 跳过连线
+        // 午休 gap: 上一段收到底部, 午休段走底部, 下一段从底部升起 (避免 moveTo 跳断导致一半浅色)
         if (breakFrac !== null && points[i - 1].frac < breakFrac && points[i].frac >= breakFrac) {
           ctx.lineTo(xFn(breakFrac), yFn(points[i - 1].price));
-          ctx.moveTo(xFn(breakFrac), yFn(points[i].price));
+          ctx.lineTo(xFn(breakFrac), h);
+          ctx.lineTo(xFn(breakFrac), yFn(points[i].price));
         } else {
           ctx.lineTo(xFn(points[i].frac), yFn(points[i].price));
         }
       }
-      // 闭合到底部
-      ctx.lineTo(xFn(Math.min(points[points.length - 1].frac, 1)), h);
-      ctx.lineTo(xOffset, h);
+      // 闭合到右下
+      ctx.lineTo(xFn(points[points.length - 1].frac), h);
       ctx.closePath();
       const grad = ctx.createLinearGradient(0, 0, 0, h);
       grad.addColorStop(0, hexA(color, 0.22));
