@@ -678,11 +678,8 @@ function drawChart(canvas, data) {
       }
       ctx.lineTo(xFn(points[points.length - 1].frac), h);
       ctx.closePath();
-      // 渐变但底部保留最低透明度, 避免价格偏低时填充过浅看起来"一半浅色"
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, hexA(color, 0.28));
-      grad.addColorStop(1, hexA(color, 0.1));
-      ctx.fillStyle = grad;
+      // 固定透明度纯色填充, 避免垂直渐变导致上午/下午视觉深浅不一
+      ctx.fillStyle = hexA(color, 0.18);
       ctx.fill();
     }
 
