@@ -649,15 +649,6 @@ function drawChart(canvas, data) {
     ctx.beginPath(); ctx.moveTo(xOffset, yBase); ctx.lineTo(xOffset + width, yBase); ctx.stroke();
     ctx.setLineDash([]);
 
-    // 画午休分界竖虚线 (午休在时间轴上压缩为零宽度点, 用竖线标示); 无午休市场不画
-    if (breakFrac !== null) {
-      ctx.setLineDash([2, 3]);
-      ctx.strokeStyle = 'rgba(139,148,158,.35)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(xFn(breakFrac), 0); ctx.lineTo(xFn(breakFrac), h); ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
     const last = prices[prices.length - 1];
     const color = last >= preClose ? upColor : downColor;
 
@@ -684,6 +675,11 @@ function drawChart(canvas, data) {
     }
 
     // 价格线(简化日不处理午休断裂, 因为只有2点是线性映射)
+    // 注意: strokeStyle 必须在 beginPath 之前设置, 否则午休处的 stroke() 会沿用上一次的灰色
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isSimplified ? 1 : 1.4;
+    ctx.lineJoin = 'round';
+    if (isSimplified) { ctx.setLineDash([3, 2]); }
     ctx.beginPath();
     let started = false;
     for (let i = 0; i < points.length; i++) {
@@ -699,10 +695,6 @@ function drawChart(canvas, data) {
         }
       }
     }
-    ctx.strokeStyle = color;
-    ctx.lineWidth = isSimplified ? 1 : 1.4;
-    ctx.lineJoin = 'round';
-    if (isSimplified) { ctx.setLineDash([3, 2]); }
     ctx.stroke();
     ctx.setLineDash([]);
 
