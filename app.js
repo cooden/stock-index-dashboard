@@ -419,15 +419,26 @@ function hexA(hex, a) {
 function lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
 
-// 交易时间映射: 9:30-11:30 (120min) + 13:00-15:00 (120min) = 240min
-// 返回该时间在全天的 [0,1] 偏移, 非交易时段返回 null
-function tradeFrac(hhmm) {
+// 各市场交易时段(北京时间, 分钟)与收盘时间 — 海外市场已换算时差
+// CN A股: 9:30-11:30 + 13:00-15:00 (240min)
+// KR 韩国: 当地9:00-15:30 = 北京 8:00-14:30 (390min 连续无午休)
+// JP 日本: 当地9:00-11:30 + 12:30-15:00 = 北京 8:00-10:30 + 11:30-14:00 (300min)
+const MARKET_SESSIONS = {
+  CN: { segs: [[570, 690], [780, 900]], close: 900 },  // A股
+  KR: { segs: [[480, 870]],           close: 870 },  // 韩国综合
+  JP: { segs: [[480, 630], [690, 840]], close: 840 }  // 日经225
+};
+// 交易时间映射: 返回该时间在全天交易时段的 [0,1] 偏移, 非交易时段返回 null
+function tradeFrac(hhmm, market) {
   const h = parseInt(hhmm.substr(0, 2), 10), m = parseInt(hhmm.substr(3, 2), 10);
   const mins = h * 60 + m;
-  // 上午 9:30 (570) - 11:30 (690)
-  if (mins >= 570 && mins <= 690) return (mins - 570) / 240;
-  // 下午 13:00 (780) - 15:00 (900)
-  if (mins >= 780 && mins <= 900) return (mins - 570 - 90) / 240; // 减90分钟午休
+  const cfg = MARKET_SESSIONS[market] || MARKET_SESSIONS.CN;
+  const tot = cfg.segs.reduce((s, [a, b]) => s + (b - a), 0);
+  let acc = 0;
+  for (const [s, e] of cfg.segs) {
+    if (mins >= s && mins <= e) return (acc + mins - s) / tot;
+    acc += e - s;
+  }
   return null;
 }
 
@@ -445,7 +456,7 @@ async function fetchTodayTrend(def) {
           const p = parseFloat(price);
           if (!Number.isFinite(p)) continue;
           const hhmm = ts.substr(11, 5);
-          const frac = tradeFrac(hhmm);
+          const frac = tradeFrac(hhmm, def.market);
           if (frac !== null) pts.push({ frac, price: p });
         }
         if (pts.length) {
@@ -553,9 +564,10 @@ async function fetchTrend(def) {
     }
   }
 
-  // 3. 缓存今天数据: 必须是完整收盘(点数≥200 且当前时间≥15:00) 才存
+  // 3. 缓存今天数据: 必须是完整收盘(点数≥200 且当前时间≥该市场收盘) 才存
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-  if (today && today.points.length >= 200 && nowMins >= 15 * 60) {
+  const closeMin = (MARKET_SESSIONS[def.market] || MARKET_SESSIONS.CN).close;
+  if (today && today.points.length >= 200 && nowMins >= closeMin) {
     const fc = lsGet(YESTERDAY_FULL_LS);
     fc[def.code] = { date: today.date, preClose: today.preClose, points: today.points, ts: Date.now() };
     lsSet(YESTERDAY_FULL_LS, fc);
@@ -586,9 +598,11 @@ function drawChart(canvas, data) {
 
   const halfW = w / 2;
 
-  // 时间轴刻度: 9:30 / 10:30 / 11:30-13:00午休 gap(中间0.5-0.625跳过) / 14:00 / 15:00
-  // 但为了简洁, 只在 0.5 (午休起点) 和 0.625 (午休终点) 之间留白即可
-  // 实际画 X 时, 用完整 0~1 frac 线性映射, 中间 0.5~0.625 午休区不画任何线
+  // 按市场计算午休分界 frac (第一段时长/总时长); KR 无午休为 null
+  const def = IDX_DEFS.find(d => d.code === canvas.dataset.code);
+  const mcfg = MARKET_SESSIONS[(def && def.market) || 'CN'] || MARKET_SESSIONS.CN;
+  const mTot = mcfg.segs.reduce((s, [a, b]) => s + (b - a), 0);
+  const breakFrac = mcfg.segs.length > 1 ? (mcfg.segs[0][1] - mcfg.segs[0][0]) / mTot : null;
 
   const drawSide = (side, xOffset, width, label) => {
     if (!side) {
@@ -615,10 +629,14 @@ function drawChart(canvas, data) {
     ctx.beginPath(); ctx.moveTo(xOffset, yBase); ctx.lineTo(xOffset + width, yBase); ctx.stroke();
     ctx.setLineDash([]);
 
-    // 画午休区空白背景 (0.5 ~ 0.625)
-    // 不需要额外画, 因为没点就空着, 但可以画个浅色分割
-    ctx.fillStyle = 'rgba(139,148,158,.06)';
-    ctx.fillRect(xFn(0.5), 0, width * 0.125, h);
+    // 画午休分界竖虚线 (午休在时间轴上压缩为零宽度点, 用竖线标示); 无午休市场不画
+    if (breakFrac !== null) {
+      ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = 'rgba(139,148,158,.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(xFn(breakFrac), 0); ctx.lineTo(xFn(breakFrac), h); ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     const last = prices[prices.length - 1];
     const color = last >= preClose ? upColor : downColor;
@@ -629,9 +647,9 @@ function drawChart(canvas, data) {
       ctx.moveTo(xFn(points[0].frac), yFn(points[0].price));
       for (let i = 1; i < points.length; i++) {
         // 如果 frac 跳过大 (>0.05) 说明是午休, 跳过连线
-        if (points[i].frac - points[i - 1].frac > 0.1) {
-          ctx.lineTo(xFn(0.5), yFn(points[i - 1].price));
-          ctx.moveTo(xFn(0.625), yFn(points[i].price));
+        if (breakFrac !== null && points[i - 1].frac < breakFrac && points[i].frac >= breakFrac) {
+          ctx.lineTo(xFn(breakFrac), yFn(points[i - 1].price));
+          ctx.moveTo(xFn(breakFrac), yFn(points[i].price));
         } else {
           ctx.lineTo(xFn(points[i].frac), yFn(points[i].price));
         }
@@ -654,7 +672,7 @@ function drawChart(canvas, data) {
       const fx = xFn(points[i].frac), fy = yFn(points[i].price);
       if (!started) { ctx.moveTo(fx, fy); started = true; }
       else {
-        if (!isSimplified && points[i].frac - points[i - 1].frac > 0.1) {
+        if (!isSimplified && breakFrac !== null && points[i - 1].frac < breakFrac && points[i].frac >= breakFrac) {
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(fx, fy);
@@ -688,7 +706,7 @@ function drawChart(canvas, data) {
     // 时间刻度线 (轻微)
     ctx.strokeStyle = 'rgba(139,148,158,.25)';
     ctx.lineWidth = 0.5;
-    [0.25, 0.5, 0.625, 0.75].forEach(f => {
+    [0.25, 0.5, 0.75].forEach(f => {
       ctx.beginPath();
       ctx.moveTo(xFn(f), 0); ctx.lineTo(xFn(f), h);
       ctx.stroke();
