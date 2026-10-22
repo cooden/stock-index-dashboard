@@ -406,7 +406,8 @@ const KLINE_HOSTS = [
 ];
 const CHART_TTL = 30000;
 const trendCache = {};              // code -> { today, prev, ts }
-const YESTERDAY_FULL_LS = 'idx_yesterday_full_v1'; // 昨天完整分时缓存
+const FULL_SNAP_LS = 'idx_full_snap_v1';            // 完整分时快照: code -> date -> 数据, 多日并存互不覆盖
+const YESTERDAY_FULL_LS = 'idx_yesterday_full_v1'; // 旧版单槽缓存(仅读取兼容)
 const YESTERDAY_OHLC_LS = 'idx_yesterday_ohlc_v1'; // 昨天OHLC缓存(兜底)
 const TODAY_FULL_LS = 'idx_today_full_v1';          // 今天分时快照(接口挂时兜底)
 
@@ -419,6 +420,12 @@ function hexA(hex, a) {
 
 function lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+// 本地日期 YYYY-MM-DD (不能用 toISOString: 北京时间 0-8 点会算成前一天)
+function localDateStr(d) {
+  d = d || new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 // 各市场交易时段(北京时间, 分钟)与收盘时间 — 海外市场已换算时差
 // CN A股: 9:30-11:30 + 13:00-15:00 (240min)
@@ -477,7 +484,7 @@ async function fetchTodayTrend(def) {
 // 拉日线 OHLC: 腾讯优先(A股稳定), 海外走东方财富 kline
 // 腾讯 fqkline 格式: [[date, open, close, high, low, vol], ...]
 async function fetchPrevDayOHLC(def) {
-  const today = new Date().toISOString().substr(0, 10);
+  const today = localDateStr();
   // 1) 腾讯日线 (A股 4 个稳定可用, 海外 N225/KS11 不支持)
   if (def.market === 'CN') {
     try {
@@ -525,7 +532,7 @@ async function fetchPrevDayOHLC(def) {
 }
 
 async function fetchTrend(def) {
-  const todayStr = new Date().toISOString().substr(0, 10);
+  const todayStr = localDateStr();
 
   // 1. 拉今天完整分时, 失败则从 localStorage 兜底
   let today = await fetchTodayTrend(def);
@@ -543,11 +550,21 @@ async function fetchTrend(def) {
     lsSet(TODAY_FULL_LS, tc);
   }
 
-  // 2. 昨天: 优先 localStorage 缓存(日期必须早于今天), 兜底日线 OHLC
+  // 2. 昨天: 取日期早于今天的完整分时快照(多日并存, 不会互相覆盖), 兜底日线 OHLC
   let prev = null;
-  const fullCache = lsGet(YESTERDAY_FULL_LS);
-  const fc = fullCache[def.code];
-  if (fc && fc.points && fc.points.length > 50 && fc.date < todayStr) {
+  const snaps = lsGet(FULL_SNAP_LS);
+  const byDate = snaps[def.code] || {};
+  let bestDate = '';
+  for (const dt of Object.keys(byDate)) {
+    if (dt < todayStr && dt > bestDate && byDate[dt].points && byDate[dt].points.length > 50) bestDate = dt;
+  }
+  let fc = bestDate ? byDate[bestDate] : null;
+  if (!fc) {
+    // 兼容旧版单槽缓存
+    const legacy = lsGet(YESTERDAY_FULL_LS)[def.code];
+    if (legacy && legacy.points && legacy.points.length > 50 && legacy.date < todayStr) fc = legacy;
+  }
+  if (fc) {
     prev = {
       date: fc.date,
       preClose: fc.preClose,
@@ -578,13 +595,17 @@ async function fetchTrend(def) {
     }
   }
 
-  // 3. 缓存今天数据: 必须是完整收盘(点数≥200 且当前时间≥该市场收盘) 才存
+  // 3. 收盘后按"日期"存档今天完整分时, 不覆盖更早的日期, 明天照常成为"昨天"
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
   const closeMin = (MARKET_SESSIONS[def.market] || MARKET_SESSIONS.CN).close;
-  if (today && today.points.length >= 200 && nowMins >= closeMin) {
-    const fc = lsGet(YESTERDAY_FULL_LS);
-    fc[def.code] = { date: today.date, preClose: today.preClose, points: today.points, ts: Date.now() };
-    lsSet(YESTERDAY_FULL_LS, fc);
+  if (today && today.points.length >= 200 && nowMins >= closeMin && today.date === todayStr) {
+    const s = lsGet(FULL_SNAP_LS);
+    const map = s[def.code] || {};
+    map[today.date] = { date: today.date, preClose: today.preClose, points: today.points, ts: Date.now() };
+    const dates = Object.keys(map).sort();
+    while (dates.length > 5) delete map[dates.shift()];   // 只留最近5个交易日
+    s[def.code] = map;
+    lsSet(FULL_SNAP_LS, s);
   }
 
   if (!today && !prev) throw new Error('all fetch fail');
