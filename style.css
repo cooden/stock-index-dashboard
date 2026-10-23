@@ -20,8 +20,7 @@
   --shadow: 0 4px 20px rgba(0,0,0,.35);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-/* 锁定横向: 禁止整页左右拖动 (clip 不产生滚动容器, 不影响 sticky 顶栏) */
-html, body { height: 100%; overflow-x: clip; }
+html, body { height: 100%; }
 body {
   font-family: -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
@@ -107,8 +106,6 @@ body {
 
 /* 指数卡片(九宫格:桌面3列,平板2列,小手机1列) */
 .index-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-/* 卡片最小内容(大数字/长代码)不撑宽网格, 避免页面出现横向溢出 */
-.index-grid > * { min-width: 0; }
 @media (max-width: 760px) { .index-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 360px) { .index-grid { grid-template-columns: 1fr; } }
 .idx-card {
