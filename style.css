@@ -104,6 +104,13 @@ body {
 .main-block .index-grid { margin-bottom: 8px; }
 .main-block .turnover-wrap { margin-top: 4px; margin-bottom: 8px; }
 
+/* 宽屏下整个"实时指数"大卡片可左右拖动(默认居中) */
+.main-block { will-change: transform; }
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  .main-block { cursor: grab; }
+  .main-block.dragging { cursor: grabbing; user-select: none; }
+}
+
 /* 指数卡片(九宫格:桌面3列,平板2列,小手机1列) */
 .index-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 @media (max-width: 760px) { .index-grid { grid-template-columns: repeat(2, 1fr); } }

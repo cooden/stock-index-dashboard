@@ -1029,3 +1029,57 @@ refreshFunds();
 // ---------- 事件绑定 ----------
 $('grayBtn')?.addEventListener('click', () => applyGrayMode(!document.body.classList.contains('gray-mode')));
 $('healthBtn')?.addEventListener('click', probeAllSources);
+initBlockDrag(document.querySelector('.main-block'));
+
+// 宽屏下整个"实时指数"大卡片左右拖动 (默认居中; 位置记忆; 双击复位居中)
+function initBlockDrag(el) {
+  if (!el) return;
+  const KEY = 'idx_block_offset_x';
+  let off = parseFloat(localStorage.getItem(KEY) || '0') || 0;
+  let down = false, startX = 0, startOff = 0;
+
+  const apply = () => { el.style.transform = off ? `translateX(${off.toFixed(1)}px)` : ''; };
+
+  // 以"未偏移"时块的左右边界计算可用余量, 右侧还要避开固定侧边栏
+  const limits = () => {
+    const r = el.getBoundingClientRect();
+    const leftAtRest = r.left - off, rightAtRest = r.right - off;
+    let rightRoom = window.innerWidth - 12 - rightAtRest;
+    const side = document.querySelector('.rank-sidebar');
+    if (side && getComputedStyle(side).position === 'fixed') {
+      rightRoom = Math.min(rightRoom, side.getBoundingClientRect().left - 12 - rightAtRest);
+    }
+    return { min: -(leftAtRest - 12), max: Math.max(0, rightRoom) };
+  };
+  const clamp = () => {
+    const { min, max } = limits();
+    off = Math.min(max, Math.max(min, off));
+  };
+
+  apply();          // 先套用记忆位置, 下面读到的 rect 才含当前偏移
+  clamp(); apply();
+
+  el.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const { min, max } = limits();
+    if (max <= 1 && min >= -1) return;      // 屏幕不够宽, 没有可移动余量
+    down = true; startX = e.clientX; startOff = off;
+    el.classList.add('dragging');
+    el.setPointerCapture?.(e.pointerId);
+  });
+  el.addEventListener('pointermove', e => {
+    if (!down) return;
+    off = startOff + (e.clientX - startX);
+    clamp(); apply();
+  });
+  const stop = () => {
+    if (!down) return;
+    down = false;
+    el.classList.remove('dragging');
+    localStorage.setItem(KEY, String(off));
+  };
+  el.addEventListener('pointerup', stop);
+  el.addEventListener('pointercancel', stop);
+  el.addEventListener('dblclick', () => { off = 0; apply(); localStorage.setItem(KEY, '0'); });
+  window.addEventListener('resize', () => { clamp(); apply(); });
+}
