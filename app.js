@@ -18,13 +18,13 @@ const IDX_DEFS = [
   { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688', market: 'CN', secid: '1.000688' },
   { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225',   market: 'JP', secid: '100.N225' },
   { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11',   market: 'KR', secid: '100.KS11' },
-  { code: 'NDX',      name: '纳斯达克', region: '美国',     bare: 'NDX',    market: 'US', secid: '100.NDX' },
   { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN', secid: '1.000985' },
+  { code: 'NDX',      name: '纳斯达克', region: '美国',     bare: 'NDX',    market: 'US', secid: '100.NDX' },
   { code: 'sh518880', name: '黄金ETF',  region: '中国大陆', bare: '518880', market: 'CN', secid: '1.518880' }
 ];
-const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,100.NDX,1.000985,1.518880';
+const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985,100.NDX,1.518880';
 
-// 17个A股排名指数(宽基 + 主流行业/主题)
+// 15个A股排名指数(宽基 + 主流行业/主题)
 const RANK_DEFS = [
   { code: 'sh000001', name: '上证指数', bare: '000001' },
   { code: 'sh000016', name: '上证50',   bare: '000016' },
@@ -33,18 +33,16 @@ const RANK_DEFS = [
   { code: 'sh000905', name: '中证500', bare: '000905' },
   { code: 'sh000852', name: '中证1000',bare: '000852' },
   { code: 'sh932000', name: '中证2000',bare: '932000' },
-  { code: 'sh000922', name: '中证红利', bare: '000922' },
   { code: 'sh000985', name: '中证全指', bare: '000985' },
   { code: 'sh000688', name: '科创50',   bare: '000688' },
   { code: 'sh931643', name: '双创50',   bare: '931643' },
   { code: 'sz399001', name: '深证成指', bare: '399001' },
-  { code: 'sz399330', name: '深证100',  bare: '399330' },
   { code: 'sz399006', name: '创业板指', bare: '399006' },
   { code: 'sz399303', name: '国证2000', bare: '399303' },
   { code: 'sz399986', name: '中证银行', bare: '399986' },
   { code: 'sz399997', name: '中证白酒', bare: '399997' }
 ];
-const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000510,1.000905,1.000852,2.932000,1.000922,1.000985,1.000688,2.931643,0.399001,0.399330,0.399006,0.399303,0.399986,0.399997';
+const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000510,1.000905,1.000852,2.932000,1.000985,1.000688,2.931643,0.399001,0.399006,0.399303,0.399986,0.399997';
 
 // ============== 数据源注册表 ==============
 const SOURCES = [
