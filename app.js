@@ -16,13 +16,13 @@ const IDX_DEFS = [
   { code: 'sh000001', name: '上证指数', region: '中国大陆', bare: '000001', market: 'CN', secid: '1.000001' },
   { code: 'sz399006', name: '创业板指', region: '中国大陆', bare: '399006', market: 'CN', secid: '0.399006' },
   { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688', market: 'CN', secid: '1.000688' },
-  { code: 'sh518880', name: '黄金ETF',  region: '中国大陆', bare: '518880', market: 'CN', secid: '1.518880' },
   { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225',   market: 'JP', secid: '100.N225' },
   { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11',   market: 'KR', secid: '100.KS11' },
   { code: 'NDX',      name: '纳斯达克', region: '美国',     bare: 'NDX',    market: 'US', secid: '100.NDX' },
-  { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN', secid: '1.000985' }
+  { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN', secid: '1.000985' },
+  { code: 'sh518880', name: '黄金ETF',  region: '中国大陆', bare: '518880', market: 'CN', secid: '1.518880' }
 ];
-const IDX_SECIDS = '1.000001,0.399006,1.000688,1.518880,100.N225,100.KS11,100.NDX,1.000985';
+const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,100.NDX,1.000985,1.518880';
 
 // 17个A股排名指数(宽基 + 主流行业/主题)
 const RANK_DEFS = [
