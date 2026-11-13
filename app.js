@@ -11,33 +11,45 @@ const bgcls = n => (n === null || n === 0 ? '' : n > 0 ? 'bg-up' : 'bg-down');
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 function pad2(n) { return String(n).padStart(2, '0'); }
 
-// 6大指数(中证全指末尾)
+// 8大指数 (A股宽基 + 海外 + 黄金ETF + 纳斯达克)
 const IDX_DEFS = [
   { code: 'sh000001', name: '上证指数', region: '中国大陆', bare: '000001', market: 'CN', secid: '1.000001' },
   { code: 'sz399006', name: '创业板指', region: '中国大陆', bare: '399006', market: 'CN', secid: '0.399006' },
   { code: 'sh000688', name: '科创50',   region: '中国大陆', bare: '000688', market: 'CN', secid: '1.000688' },
+  { code: 'sh518880', name: '黄金ETF',  region: '中国大陆', bare: '518880', market: 'CN', secid: '1.518880' },
   { code: 'N225',     name: '日经225',  region: '日本',     bare: 'N225',   market: 'JP', secid: '100.N225' },
   { code: 'KS11',     name: '韩国综合', region: '韩国',     bare: 'KS11',   market: 'KR', secid: '100.KS11' },
+  { code: 'NDX',      name: '纳斯达克', region: '美国',     bare: 'NDX',    market: 'US', secid: '100.NDX' },
   { code: 'sh000985', name: '中证全指', region: '中国大陆', bare: '000985', market: 'CN', secid: '1.000985' }
 ];
-const IDX_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985';
+const IDX_SECIDS = '1.000001,0.399006,1.000688,1.518880,100.N225,100.KS11,100.NDX,1.000985';
 
-// 12个A股排名指数(含中证2000)
+// 22个A股排名指数(宽基 + 主流行业/主题)
 const RANK_DEFS = [
   { code: 'sh000001', name: '上证指数', bare: '000001' },
   { code: 'sh000016', name: '上证50',   bare: '000016' },
+  { code: 'sh000010', name: '上证180',  bare: '000010' },
   { code: 'sh000300', name: '沪深300', bare: '000300' },
   { code: 'sh000905', name: '中证500', bare: '000905' },
   { code: 'sh000852', name: '中证1000',bare: '000852' },
   { code: 'sh932000', name: '中证2000',bare: '932000' },
+  { code: 'sh000922', name: '中证红利', bare: '000922' },
   { code: 'sh000985', name: '中证全指', bare: '000985' },
   { code: 'sh000688', name: '科创50',   bare: '000688' },
   { code: 'sh931643', name: '双创50',   bare: '931643' },
+  { code: 'sh000932', name: '中证消费', bare: '000932' },
   { code: 'sz399001', name: '深证成指', bare: '399001' },
+  { code: 'sz399330', name: '深证100',  bare: '399330' },
   { code: 'sz399006', name: '创业板指', bare: '399006' },
-  { code: 'sz399102', name: '创业板综', bare: '399102' }
+  { code: 'sz399102', name: '创业板综', bare: '399102' },
+  { code: 'sz399303', name: '国证2000', bare: '399303' },
+  { code: 'sz399975', name: '证券公司', bare: '399975' },
+  { code: 'sz399967', name: '中证军工', bare: '399967' },
+  { code: 'sz399986', name: '中证银行', bare: '399986' },
+  { code: 'sz399989', name: '中证医疗', bare: '399989' },
+  { code: 'sz399997', name: '中证白酒', bare: '399997' }
 ];
-const RANK_SECIDS = '1.000001,1.000016,1.000300,1.000905,1.000852,2.932000,1.000985,1.000688,2.931643,0.399001,0.399006,0.399102';
+const RANK_SECIDS = '1.000001,1.000016,1.000010,1.000300,1.000905,1.000852,2.932000,1.000922,1.000985,1.000688,2.931643,1.000932,0.399001,0.399330,0.399006,0.399102,0.399303,0.399975,0.399967,0.399986,0.399989,0.399997';
 
 // ============== 数据源注册表 ==============
 const SOURCES = [
@@ -233,7 +245,8 @@ async function fetchEMJapanKorea() {
 
 // ---------- 行情快照 ----------
 // 合并为单个东方财富请求(指数+排名+涨跌家数+成交额), 减少并发避免超时
-const ALL_SECIDS = '1.000001,0.399006,1.000688,100.N225,100.KS11,1.000985,1.000016,1.000300,1.000905,1.000852,2.932000,2.931643,0.399001,0.399102,0.399106';
+// 合并请求: 全部排名指数 + 深证综指(深市涨跌家数, 沪市用上证指数)
+const ALL_SECIDS = RANK_SECIDS + ',0.399106';
 const ALL_FIELDS = 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17,f104,f105,f106';
 
 async function fetchSnapshot() {
@@ -431,10 +444,12 @@ function localDateStr(d) {
 // CN A股: 9:30-11:30 + 13:00-15:00 (240min)
 // KR 韩国: 当地9:00-15:30 = 北京 8:00-14:30 (390min 连续无午休)
 // JP 日本: 当地9:00-11:30 + 12:30-15:00 = 北京 8:00-10:30 + 11:30-14:00 (300min)
+// US 美股: 当地9:30-16:00 = 北京 22:30-05:00(冬令) 跨午夜 (390min)
 const MARKET_SESSIONS = {
   CN: { segs: [[570, 690], [780, 900]], close: 900 },  // A股
   KR: { segs: [[480, 870]],           close: 870 },  // 韩国综合
-  JP: { segs: [[480, 630], [690, 840]], close: 840 }  // 日经225
+  JP: { segs: [[480, 630], [690, 840]], close: 840 }, // 日经225
+  US: { segs: [[1350, 1440], [0, 300]], close: 300 }  // 纳斯达克 (跨午夜)
 };
 // 交易时间映射: 返回该时间在全天交易时段的 [0,1] 偏移, 非交易时段返回 null
 function tradeFrac(hhmm, market) {
