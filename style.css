@@ -112,30 +112,30 @@ body {
 }
 
 /* 指数卡片(九宫格:桌面3列,平板2列,小手机1列) */
-.index-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.index-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 @media (max-width: 760px) { .index-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 360px) { .index-grid { grid-template-columns: 1fr; } }
 .idx-card {
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px; position: relative; overflow: hidden; transition: transform .15s, border-color .15s;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; position: relative; overflow: hidden; transition: transform .15s, border-color .15s;
 }
 .idx-card:hover { transform: translateY(-2px); }
 .idx-card.up { border-color: rgba(234,57,67,.5); }
 .idx-card.down { border-color: rgba(22,199,132,.5); }
-.idx-region { position: absolute; top: 10px; right: 10px; font-size: 10px; color: var(--txt-dim); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; }
-.idx-name { font-size: 14px; font-weight: 600; }
+.idx-region { position: absolute; top: 8px; right: 8px; font-size: 9px; color: var(--txt-dim); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; }
+.idx-name { font-size: 13px; font-weight: 600; }
 .idx-code { font-size: 10px; color: var(--txt-dim); margin-top: 1px; }
-.idx-price { font-size: 22px; font-weight: 800; margin-top: 6px; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
-.idx-change { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.idx-price { font-size: 18px; font-weight: 800; margin-top: 4px; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.idx-change { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .chg-pill { padding: 1px 6px; border-radius: 5px; font-weight: 600; }
 /* 涨红跌绿(中式): .up=上涨红 .down=下跌绿, 由 --up/--down 控制 */
 .up { color: var(--up); }
 .down { color: var(--down); }
 .bg-up { background: var(--up-bg); }
 .bg-down { background: var(--down-bg); }
-.idx-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 8px; font-size: 10px; color: var(--txt-dim); }
+.idx-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 5px; font-size: 10px; color: var(--txt-dim); }
 .idx-meta b { color: var(--txt); font-weight: 500; }
-.idx-chart-wrap { margin-top: 6px; height: 58px; }
+.idx-chart-wrap { margin-top: 4px; height: 42px; }
 .idx-chart { width: 100%; height: 100%; display: block; }
 .supplement-tag { font-size: 9px; color: var(--gold); border: 1px dashed var(--gold); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 
@@ -287,13 +287,13 @@ body.gray-mode #grayBtn { background: var(--panel-2); border-color: var(--txt-di
   .src-label { display: none; }
   .container { padding: 10px 12px; }
   .block { padding: 12px; margin-bottom: 12px; }
-  .idx-card { padding: 12px; }
-  .idx-name { font-size: 15px; }
+  .idx-card { padding: 10px; }
+  .idx-name { font-size: 14px; }
   .idx-code { font-size: 11px; }
-  .idx-price { font-size: 24px; }
-  .idx-change { font-size: 14px; }
+  .idx-price { font-size: 20px; }
+  .idx-change { font-size: 13px; }
   .idx-meta { display: none; }
-  .idx-chart-wrap { height: 64px; margin-top: 8px; }
+  .idx-chart-wrap { height: 50px; margin-top: 6px; }
   .bn .val { font-size: 18px; }
   .breadth-bar { height: 12px; }
   .refresh-badge { font-size: 11px; padding: 3px 10px; min-width: 70px; }
